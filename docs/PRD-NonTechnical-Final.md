@@ -176,28 +176,28 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 
 ##### Acceptance Criteria
 
-- [ ] Each phase (analysis and drafting) has its own independently tracked status
-- [ ] Both phase rows are created when the ticket is submitted
-- [ ] A phase that has completed successfully is never re-run, even on re-processing
-- [ ] How many times each phase has been attempted is recorded
-- [ ] Phase output is stored and linked to the originating ticket
+- [x] Each phase (analysis and drafting) has its own independently tracked status
+- [x] Both phase rows are created when the ticket is submitted
+- [x] A phase that has completed successfully is never re-run, even on re-processing
+- [x] How many times each phase has been attempted is recorded
+- [x] Phase output is stored and linked to the originating ticket
 
 ##### Definition of Done
 
-- [ ] Phase tracking confirmed independent: Phase 1 and Phase 2 have separate status records
-- [ ] Completed phase confirmed never re-executed — verified by test
-- [ ] Attempt count increments correctly on each retry
-- [ ] Phase output retrievable from the ticket status endpoint when complete
-- [ ] Phase rows exist up front so the status endpoint always has a stable shape
+- [x] Phase tracking confirmed independent: Phase 1 and Phase 2 have separate status records
+- [x] Completed phase confirmed never re-executed — verified by test
+- [x] Attempt count increments correctly on each retry
+- [x] Phase output retrievable from the ticket status endpoint when complete
+- [x] Phase rows exist up front so the status endpoint always has a stable shape
 
 ##### Checklist
 
 - [x] Database table for per-phase tracking created
-- [ ] Phase status lifecycle: started → progress → success / failure
-- [ ] Attempt counter increments atomically on each failure
-- [ ] Phase output stored as structured data linked to ticket
-- [ ] Phase rows created at submission time for both triage and draft
-- [ ] Completed phase skip logic enforced on worker pickup and DB claim
+- [x] Phase status lifecycle: started → progress → success / failure
+- [x] Attempt counter increments atomically on each failure
+- [x] Phase output stored as structured data linked to ticket
+- [x] Phase rows created at submission time for both triage and draft
+- [x] Completed phase skip logic enforced on worker pickup and DB claim
 
 ---
 
@@ -261,10 +261,10 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 
 ### Kanban
 
-| Backlog              | In Progress                | Review | Done                       |
-| -------------------- | -------------------------- | ------ | -------------------------- |
-| US-1.3: Audit trail  | US-1.2: Per-phase tracking | —      | US-1.1: Ticket persistence |
-| US-1.4: Soft-archive | —                          | —      | —                          |
+| Backlog              | In Progress | Review | Done                         |
+| -------------------- | ----------- | ------ | ---------------------------- |
+| US-1.3: Audit trail  | —           | —      | US-1.1: Ticket persistence   |
+| US-1.4: Soft-archive | —           | —      | US-1.2: Per-phase tracking   |
 
 ---
 
@@ -292,24 +292,24 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 
 ##### Acceptance Criteria
 
-- [ ] Ticket submission returns a confirmation in under 200 milliseconds
-- [ ] Response includes a unique ticket ID for tracking
-- [ ] Response clearly communicates that processing is happening in the background
-- [ ] Customer is never left waiting while AI processing runs
+- [x] Ticket submission returns a confirmation in under 200 milliseconds
+- [x] Response includes a unique ticket ID for tracking
+- [x] Response clearly communicates that processing is happening in the background
+- [x] Customer is never left waiting while AI processing runs
 
 ##### Definition of Done
 
-- [ ] Response time confirmed under 200ms in testing
-- [ ] Unique ticket ID confirmed present in every response
-- [ ] Submission confirmed not to block while AI runs
-- [ ] Missing required fields return a helpful error message (not a crash)
+- [x] Response time confirmed under 200ms in testing
+- [x] Unique ticket ID confirmed present in every response
+- [x] Submission confirmed not to block while AI runs
+- [x] Missing required fields return a helpful error message (not a crash)
 
 ##### Checklist
 
-- [ ] Ticket submission endpoint responds with 202 status (accepted, not yet complete)
-- [ ] Ticket saved to database before any background processing begins
-- [ ] Required fields validated: subject and ticket body
-- [ ] Invalid submissions return a clear, structured error message
+- [x] Ticket submission endpoint responds with 202 status (accepted, not yet complete)
+- [x] Ticket saved to database before any background processing begins
+- [x] Required fields validated: subject and ticket body
+- [x] Invalid submissions return a clear, structured error message
 
 ---
 
@@ -321,26 +321,26 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 
 ##### Acceptance Criteria
 
-- [ ] Any ticket can be looked up by its ID at any time
-- [ ] Status response shows the current stage clearly
-- [ ] Response includes the output of each AI phase when it is complete
+- [x] Any ticket can be looked up by its ID at any time
+- [x] Status response shows the current stage clearly
+- [x] Response includes the output of each AI phase when it is complete
 - [ ] Full history of every action taken on the ticket is included
-- [ ] A clear error is returned for invalid ticket IDs
+- [x] A clear error is returned for invalid ticket IDs
 
 ##### Definition of Done
 
-- [ ] Status endpoint returns correct current stage for tickets in all states
-- [ ] Phase outputs present in response when phases are complete
-- [ ] Phase outputs absent when phases are not yet complete
+- [x] Status endpoint returns correct current stage for tickets in all states
+- [x] Phase outputs present in response when phases are complete
+- [x] Phase outputs absent when phases are not yet complete
 - [ ] Full history returned in correct chronological order
-- [ ] 404 response confirmed for unknown ticket IDs
+- [x] 404 response confirmed for unknown ticket IDs
 
 ##### Checklist
 
-- [ ] Status endpoint implemented and returns: ticket status, phase statuses, phase outputs, event history
-- [ ] Phase output only shown when phase is fully complete
-- [ ] Event history deferred to US-1.3 (non-MVP) — not included in MVP scope
-- [ ] Invalid ticket ID returns clear not-found response
+- [x] Status endpoint implemented and returns: ticket status, phase statuses, phase outputs, event history
+- [x] Phase output only shown when phase is fully complete
+- [x] Event history deferred to US-1.3 (non-MVP) — not included in MVP scope
+- [x] Invalid ticket ID returns clear not-found response
 
 ---
 
@@ -406,12 +406,10 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 
 ### Kanban
 
-| Backlog                           | In Progress | Review | Done |
-| --------------------------------- | ----------- | ------ | ---- |
-| US-2.1: Immediate acknowledgement | —           | —      | —    |
-| US-2.2: Ticket status check       | —           | —      | —    |
-| US-2.3: Ticket list & filtering   | —           | —      | —    |
-| US-2.4: Manual retry              | —           | —      | —    |
+| Backlog                         | In Progress | Review | Done                              |
+| ------------------------------- | ----------- | ------ | --------------------------------- |
+| US-2.3: Ticket list & filtering | —           | —      | US-2.1: Immediate acknowledgement |
+| US-2.4: Manual retry            | —           | —      | US-2.2: Ticket status check       |
 
 ---
 

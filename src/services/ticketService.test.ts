@@ -16,6 +16,20 @@ function makeTicket(overrides: Partial<Ticket> = {}): Ticket {
 }
 
 describe('submitTicket', () => {
+  // US-1.1: ticket persisted with queued status before processing begins
+  it('returns ticket with queued status immediately on submission', async () => {
+    const input: TicketInput = { subject: 'Test subject', body: 'Test body' };
+
+    const ticket = await submitTicket(input, {
+      createTicketFn: vi.fn(async () => makeTicket({ status: 'queued' })),
+      enqueueTicketFn: vi.fn(),
+    });
+
+    expect(ticket.status).toBe('queued');
+    expect(ticket.id).toBe('018f8a30-52f7-7d9f-bb7d-6924b8d8a001');
+  });
+
+  // US-1.1: ticket saved before background work starts
   it('creates ticket before enqueueing id', async () => {
     const callOrder: string[] = [];
     const input: TicketInput = { subject: 'A', body: 'B' };

@@ -221,4 +221,144 @@ describe('processTicketLifecycle', () => {
     expect(processPhaseFn).not.toHaveBeenCalled();
     expect(transitionTicketStatusFn).not.toHaveBeenCalled();
   });
+
+  // US-1.1: ticket not found → no status mutation, no processing
+  it('skips processing when ticket is not found in the database', async () => {
+    const transitionTicketStatusFn = vi.fn();
+    const processPhaseFn = vi.fn();
+
+    await processTicketLifecycle('018f8a30-52f7-7d9f-bb7d-6924b8d8a002', {
+      getTicketByIdFn: vi.fn(async () => null),
+      transitionTicketStatusFn,
+      processPhaseFn,
+    });
+
+    expect(transitionTicketStatusFn).not.toHaveBeenCalled();
+    expect(processPhaseFn).not.toHaveBeenCalled();
+  });
+
+  // US-1.1: failed ticket remains in DB with failed status (not deleted)
+  // US-1.2: attempt counter drives retry vs permanent failure threshold
+  it('transitions ticket to failed after phase reaches 3 attempts', async () => {
+    const transitionTicketStatusFn = vi.fn()
+      .mockResolvedValueOnce(makeTicket({ status: 'processing' }))
+      .mockResolvedValueOnce(makeTicket({ status: 'failed' }));
+
+    await processTicketLifecycle('018f8a30-52f7-7d9f-bb7d-6924b8d8a002', {
+      getTicketByIdFn: vi.fn(async () => makeTicket({ status: 'queued' })),
+      getTicketPhasesByTicketIdFn: vi.fn(async () => [
+        makePhase({ phase: 'triage', status: 'started' }),
+        makePhase({ id: '018f8a30-52f7-7d9f-bb7d-6924b8d8a202', phase: 'draft', status: 'started' }),
+      ]),
+      transitionTicketStatusFn,
+      claimPhaseForProcessingFn: vi.fn(async () =>
+        makePhase({ phase: 'triage', status: 'progress', started_at: new Date() }),
+      ),
+      failPhaseAttemptFn: vi.fn(async () =>
+        makePhase({ phase: 'triage', status: 'failure', attempts: 3 }),
+      ),
+      processPhaseFn: vi.fn(async () => {
+        throw new Error('phase error');
+      }),
+    });
+
+    expect(transitionTicketStatusFn).toHaveBeenCalledWith(
+      '018f8a30-52f7-7d9f-bb7d-6924b8d8a002',
+      ['queued', 'processing'],
+      'failed',
+    );
+  });
+
+  // US-1.2: phase output stored and linked to ticketId on success
+  it('stores each phase output linked to the ticket id', async () => {
+    const triageOutput = { category: 'billing' };
+    const draftOutput = { reply: 'resolved' };
+    const completePhaseSuccessFn = vi.fn(async () =>
+      makePhase({ status: 'success', completed_at: new Date() }),
+    );
+
+    await processTicketLifecycle('018f8a30-52f7-7d9f-bb7d-6924b8d8a002', {
+      getTicketByIdFn: vi.fn(async () => makeTicket({ status: 'queued' })),
+      getTicketPhasesByTicketIdFn: vi.fn()
+        .mockResolvedValueOnce([
+          makePhase({ phase: 'triage', status: 'started' }),
+          makePhase({ id: '018f8a30-52f7-7d9f-bb7d-6924b8d8a202', phase: 'draft', status: 'started' }),
+        ])
+        .mockResolvedValueOnce([
+          makePhase({ phase: 'triage', status: 'success', output: triageOutput }),
+          makePhase({ id: '018f8a30-52f7-7d9f-bb7d-6924b8d8a202', phase: 'draft', status: 'started' }),
+        ])
+        .mockResolvedValueOnce([
+          makePhase({ phase: 'triage', status: 'success', output: triageOutput }),
+          makePhase({
+            id: '018f8a30-52f7-7d9f-bb7d-6924b8d8a202',
+            phase: 'draft',
+            status: 'success',
+            output: draftOutput,
+          }),
+        ]),
+      transitionTicketStatusFn: vi.fn()
+        .mockResolvedValueOnce(makeTicket({ status: 'processing' }))
+        .mockResolvedValueOnce(makeTicket({ status: 'completed' })),
+      claimPhaseForProcessingFn: vi.fn()
+        .mockResolvedValueOnce(makePhase({ phase: 'triage', status: 'progress', started_at: new Date() }))
+        .mockResolvedValueOnce(makePhase({ phase: 'draft', status: 'progress', started_at: new Date() })),
+      completePhaseSuccessFn,
+      processPhaseFn: vi.fn()
+        .mockResolvedValueOnce(triageOutput)
+        .mockResolvedValueOnce(draftOutput),
+    });
+
+    expect(completePhaseSuccessFn).toHaveBeenNthCalledWith(
+      1,
+      '018f8a30-52f7-7d9f-bb7d-6924b8d8a002',
+      'triage',
+      triageOutput,
+    );
+    expect(completePhaseSuccessFn).toHaveBeenNthCalledWith(
+      2,
+      '018f8a30-52f7-7d9f-bb7d-6924b8d8a002',
+      'draft',
+      draftOutput,
+    );
+  });
+
+  // US-1.2: completed phase skip enforced at claim level — only pending phase claimed
+  it('claims only the pending phase when triage already succeeded', async () => {
+    const claimPhaseForProcessingFn = vi.fn(async () =>
+      makePhase({ phase: 'draft', status: 'progress', started_at: new Date() }),
+    );
+
+    await processTicketLifecycle('018f8a30-52f7-7d9f-bb7d-6924b8d8a002', {
+      getTicketByIdFn: vi.fn(async () => makeTicket({ status: 'queued' })),
+      getTicketPhasesByTicketIdFn: vi.fn()
+        .mockResolvedValueOnce([
+          makePhase({ phase: 'triage', status: 'success', output: { category: 'billing' } }),
+          makePhase({ id: '018f8a30-52f7-7d9f-bb7d-6924b8d8a202', phase: 'draft', status: 'started' }),
+        ])
+        .mockResolvedValueOnce([
+          makePhase({ phase: 'triage', status: 'success', output: { category: 'billing' } }),
+          makePhase({
+            id: '018f8a30-52f7-7d9f-bb7d-6924b8d8a202',
+            phase: 'draft',
+            status: 'success',
+            output: { reply: 'done' },
+          }),
+        ]),
+      transitionTicketStatusFn: vi.fn()
+        .mockResolvedValueOnce(makeTicket({ status: 'processing' }))
+        .mockResolvedValueOnce(makeTicket({ status: 'completed' })),
+      claimPhaseForProcessingFn,
+      completePhaseSuccessFn: vi.fn(async () =>
+        makePhase({ phase: 'draft', status: 'success', completed_at: new Date() }),
+      ),
+      processPhaseFn: vi.fn(async () => ({ reply: 'done' })),
+    });
+
+    expect(claimPhaseForProcessingFn).toHaveBeenCalledTimes(1);
+    expect(claimPhaseForProcessingFn).toHaveBeenCalledWith(
+      '018f8a30-52f7-7d9f-bb7d-6924b8d8a002',
+      'draft',
+    );
+  });
 });

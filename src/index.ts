@@ -1,17 +1,12 @@
 import 'dotenv/config';
-import express from 'express';
-import ticketRoutes from './routes/ticketRoutes.ts';
-import { errorHandler } from './middleware/errorHandler.ts';
+import { createApp } from './app.ts';
+import { submitTicket, getTicket } from './services/ticketService.ts';
 import logger from './lib/logger.ts';
 import { startTicketWorker } from './workers/ticketWorker.ts';
 
-const app = express();
 const PORT = process.env['PORT'] ?? '3000';
 
-app.use(express.json());
-app.use('/tickets', ticketRoutes);
-app.use(errorHandler);
-
+const app = createApp({ submitTicket, getTicket });
 const worker = startTicketWorker();
 
 const server = app.listen(Number(PORT), () => {
