@@ -5,7 +5,7 @@ CREATE TYPE event_type AS ENUM (
 );
 
 CREATE TABLE IF NOT EXISTS ticket_events (
-  id         UUID PRIMARY KEY DEFAULT gen_random_uuid_v7(),
+  id         UUID PRIMARY KEY,
   ticket_id  UUID NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
   phase      phase_name,
   event_type event_type NOT NULL,

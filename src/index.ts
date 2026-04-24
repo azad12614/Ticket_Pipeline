@@ -1,14 +1,16 @@
 import 'dotenv/config';
-import { pool } from './lib/db.ts';
+import express from 'express';
+import ticketRoutes from './routes/ticketRoutes.ts';
+import { errorHandler } from './middleware/errorHandler.ts';
 import logger from './lib/logger.ts';
 
-async function main() {
-  const result = await pool.query('SELECT 1');
-  logger.info({ message: 'DB connected', rows: result.rows });
-  await pool.end();
-}
+const app = express();
+const PORT = process.env['PORT'] ?? '3000';
 
-main().catch(err => {
-  logger.error('DB connection failed:', err);
-  process.exit(1);
+app.use(express.json());
+app.use('/tickets', ticketRoutes);
+app.use(errorHandler);
+
+app.listen(Number(PORT), () => {
+  logger.info({ port: PORT }, 'Server started');
 });

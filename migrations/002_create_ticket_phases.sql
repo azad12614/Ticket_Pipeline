@@ -2,7 +2,7 @@ CREATE TYPE phase_name AS ENUM ('triage', 'draft');
 CREATE TYPE phase_status AS ENUM ('started', 'progress', 'success', 'failure');
 
 CREATE TABLE IF NOT EXISTS ticket_phases (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid_v7(),
+  id           UUID PRIMARY KEY,
   ticket_id    UUID NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
   phase        phase_name NOT NULL,
   status       phase_status NOT NULL DEFAULT 'started',

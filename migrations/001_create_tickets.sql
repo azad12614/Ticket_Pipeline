@@ -1,9 +1,7 @@
-CREATE EXTENSION IF NOT EXISTS pg_uuidv7;
-
 CREATE TYPE ticket_status AS ENUM ('queued', 'processing', 'completed', 'failed');
 
 CREATE TABLE IF NOT EXISTS tickets (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid_v7(),
+  id          UUID PRIMARY KEY,
   subject     TEXT NOT NULL,
   body        TEXT NOT NULL,
   status      ticket_status NOT NULL DEFAULT 'queued',
