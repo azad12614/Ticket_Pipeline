@@ -1,5 +1,5 @@
 import logger from '../lib/logger.ts';
-import { dequeueTicket } from '../queues/ticketQueue.ts';
+import { receiveTickets, deleteTicketMessage, enqueueTicket } from '../queues/ticketQueue.ts';
 import {
   claimPhaseForProcessing,
   completePhaseSuccess,
@@ -24,6 +24,7 @@ type WorkerDeps = {
   completePhaseSuccessFn?: typeof completePhaseSuccess;
   failPhaseAttemptFn?: typeof failPhaseAttempt;
   processPhaseFn?: (ticketId: string, phase: PhaseName) => Promise<unknown>;
+  enqueueTicketFn?: (ticketId: string) => Promise<void>;
 };
 
 function isTerminalStatus(status: TicketStatus): boolean {
@@ -57,6 +58,7 @@ export async function processTicketLifecycle(
   const completePhaseSuccessFn = deps.completePhaseSuccessFn ?? completePhaseSuccess;
   const failPhaseAttemptFn = deps.failPhaseAttemptFn ?? failPhaseAttempt;
   const processPhaseFn = deps.processPhaseFn ?? defaultProcessFn;
+  const enqueueTicketFn = deps.enqueueTicketFn ?? enqueueTicket;
 
   const existing = await getTicketByIdFn(ticketId);
   if (!existing) {
@@ -110,6 +112,7 @@ export async function processTicketLifecycle(
           await transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
         } else {
           await transitionTicketStatusFn(ticketId, ['processing'], 'queued');
+          await enqueueTicketFn(ticketId);
         }
 
         return;
@@ -135,12 +138,13 @@ export function startTicketWorker(deps: WorkerDeps = {}): WorkerHandle {
   const done = (async () => {
     while (!controller.signal.aborted) {
       try {
-        const ticketId = await dequeueTicket(controller.signal);
-        await processTicketLifecycle(ticketId, deps);
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          break;
+        const messages = await receiveTickets(controller.signal);
+        for (const { ticketId, receiptHandle } of messages) {
+          await processTicketLifecycle(ticketId, deps);
+          await deleteTicketMessage(receiptHandle);
         }
+      } catch (error) {
+        if (controller.signal.aborted) break;
         logger.error({ err: error }, 'Worker loop error');
       }
     }

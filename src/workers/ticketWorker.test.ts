@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import { processTicketLifecycle } from './ticketWorker.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { processTicketLifecycle, startTicketWorker } from './ticketWorker.ts';
+import { enqueueTicket, purgeQueue } from '../queues/ticketQueue.ts';
 import type { Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketPhase } from '../schemas/phaseSchema.ts';
 
@@ -134,6 +135,7 @@ describe('processTicketLifecycle', () => {
     const failPhaseAttemptFn = vi.fn(async () =>
       makePhase({ phase: 'triage', status: 'failure', attempts: 1 }),
     );
+    const enqueueTicketFn = vi.fn(async () => {});
 
     await processTicketLifecycle('018f8a30-52f7-7d9f-bb7d-6924b8d8a002', {
       getTicketByIdFn: vi.fn(async () => makeTicket({ status: 'queued' })),
@@ -143,6 +145,7 @@ describe('processTicketLifecycle', () => {
         makePhase({ phase: 'triage', status: 'progress' }),
       ),
       failPhaseAttemptFn,
+      enqueueTicketFn,
       processPhaseFn: vi.fn(async () => {
         throw new Error('processing failed');
       }),
@@ -158,6 +161,7 @@ describe('processTicketLifecycle', () => {
       '018f8a30-52f7-7d9f-bb7d-6924b8d8a002',
       'triage',
     );
+    expect(enqueueTicketFn).toHaveBeenCalledWith('018f8a30-52f7-7d9f-bb7d-6924b8d8a002');
   });
 
   it('does not re-run a successful phase when re-processing a queued ticket', async () => {
@@ -360,5 +364,43 @@ describe('processTicketLifecycle', () => {
       '018f8a30-52f7-7d9f-bb7d-6924b8d8a002',
       'draft',
     );
+  });
+});
+
+describe('startTicketWorker SQS integration', () => {
+  beforeEach(async () => {
+    await purgeQueue();
+  });
+
+  it('picks up SQS message and processes ticket lifecycle', async () => {
+    const ticketId = '018f8a30-52f7-7d9f-bb7d-6924b8d8a999';
+
+    await enqueueTicket(ticketId);
+
+    const getTicketByIdFn = vi.fn(async () => makeTicket({ id: ticketId, status: 'queued' }));
+    const transitionTicketStatusFn = vi.fn()
+      .mockResolvedValueOnce(makeTicket({ id: ticketId, status: 'processing' }))
+      .mockResolvedValueOnce(makeTicket({ id: ticketId, status: 'completed' }));
+    const getTicketPhasesByTicketIdFn = vi.fn().mockResolvedValue([
+      makePhase({ phase: 'triage', status: 'success', output: {} }),
+      makePhase({ id: '018f8a30-52f7-7d9f-bb7d-6924b8d8a202', phase: 'draft', status: 'success', output: {} }),
+    ]);
+
+    const worker = startTicketWorker({
+      getTicketByIdFn,
+      transitionTicketStatusFn,
+      getTicketPhasesByTicketIdFn,
+    });
+
+    await vi.waitFor(
+      () => { expect(getTicketByIdFn).toHaveBeenCalledWith(ticketId); },
+      { timeout: 10000 },
+    );
+
+    worker.stop();
+    await worker.done;
+
+    expect(transitionTicketStatusFn).toHaveBeenCalledWith(ticketId, ['queued'], 'processing');
+    expect(transitionTicketStatusFn).toHaveBeenCalledWith(ticketId, ['processing'], 'completed');
   });
 });

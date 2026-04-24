@@ -17,7 +17,7 @@ export class NotFoundError extends Error {
 
 interface SubmitTicketDeps {
   createTicketFn?: (input: TicketInput) => Promise<Ticket>;
-  enqueueTicketFn?: (ticketId: string) => void;
+  enqueueTicketFn?: (ticketId: string) => Promise<void> | void;
 }
 
 export async function submitTicket(
@@ -28,7 +28,7 @@ export async function submitTicket(
   const enqueueTicketFn = deps.enqueueTicketFn ?? enqueueTicket;
 
   const ticket = await createTicketFn(input);
-  enqueueTicketFn(ticket.id);
+  await enqueueTicketFn(ticket.id);
   return ticket;
 }
 

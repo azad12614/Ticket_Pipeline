@@ -437,21 +437,21 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 ##### Acceptance Criteria
 
-- [ ] Ticket submission returns immediately — AI processing happens in the background
-- [ ] Background processing begins automatically after submission — no manual trigger
-- [ ] Multiple tickets can be processed without interfering with each other
+- [x] Ticket submission returns immediately — AI processing happens in the background
+- [x] Background processing begins automatically after submission — no manual trigger
+- [x] Multiple tickets can be processed without interfering with each other
 
 ##### Definition of Done
 
-- [ ] Submission response confirmed before background processing begins
-- [ ] Background worker confirmed picking up and processing tickets automatically
-- [ ] Worker confirmed stable processing tickets one at a time without interference
+- [x] Submission response confirmed before background processing begins
+- [x] Background worker confirmed picking up and processing tickets automatically
+- [x] Worker confirmed stable processing tickets one at a time without interference
 
 ##### Checklist
 
-- [ ] Work queue implemented to hold tickets waiting to be processed
-- [ ] Background worker implemented to continuously poll the queue
-- [ ] Worker processes one ticket at a time reliably
+- [x] Work queue implemented to hold tickets waiting to be processed (SQS Standard)
+- [x] Background worker implemented to continuously poll the queue
+- [x] Worker processes one ticket at a time reliably
 
 ---
 
@@ -463,21 +463,21 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 ##### Acceptance Criteria
 
-- [ ] Phase 2 starts automatically and immediately when Phase 1 completes successfully
-- [ ] Phase 2 never starts if Phase 1 has not completed
-- [ ] The handoff between phases requires no manual action
+- [x] Phase 2 starts automatically and immediately when Phase 1 completes successfully
+- [x] Phase 2 never starts if Phase 1 has not completed
+- [x] The handoff between phases requires no manual action
 
 ##### Definition of Done
 
-- [ ] Phase 2 confirmed to start automatically after Phase 1 success
-- [ ] Phase 2 confirmed blocked when Phase 1 has not completed
-- [ ] Zero manual steps required between phases
+- [x] Phase 2 confirmed to start automatically after Phase 1 success
+- [x] Phase 2 confirmed blocked when Phase 1 has not completed
+- [x] Zero manual steps required between phases
 
 ##### Checklist
 
-- [ ] Phase 1 completion triggers automatic Phase 2 enqueue
-- [ ] Phase 2 worker checks Phase 1 completion before running
-- [ ] Handoff tested end-to-end with a real ticket
+- [x] Phase 1 completion triggers automatic Phase 2 enqueue
+- [x] Phase 2 worker checks Phase 1 completion before running
+- [x] Handoff tested end-to-end with a real ticket
 
 ---
 
@@ -489,24 +489,24 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 ##### Acceptance Criteria
 
-- [ ] Failed phases are retried automatically — no manual trigger required
+- [x] Failed phases are retried automatically — no manual trigger required
 - [ ] Retries use increasing wait times to avoid overloading the AI provider
-- [ ] Retry attempts are recorded and visible on the ticket
-- [ ] After 3 failed attempts, the ticket is moved to a needs-attention state
+- [x] Retry attempts are recorded and visible on the ticket
+- [x] After 3 failed attempts, the ticket is moved to a needs-attention state
 
 ##### Definition of Done
 
-- [ ] Automatic retry confirmed without manual intervention
+- [x] Automatic retry confirmed without manual intervention
 - [ ] Retry wait times confirmed: ~2 seconds, then ~4 seconds, then give up
-- [ ] Attempt count visible on ticket status endpoint after retries
-- [ ] After 3 failures, ticket status confirmed set to failed
+- [x] Attempt count visible on ticket status endpoint after retries
+- [x] After 3 failures, ticket status confirmed set to failed
 
 ##### Checklist
 
 - [ ] Retry logic implemented with exponential backoff (attempt 1: immediate, 2: ~2s, 3: ~4s)
 - [ ] Slight randomization added to retry timing to prevent retry surges
-- [ ] Attempt count incremented on each failure
-- [ ] After 3 failures, ticket status set to `failed` (needs-attention queue deferred to US-6.2)
+- [x] Attempt count incremented on each failure
+- [x] After 3 failures, ticket status set to `failed` (needs-attention queue deferred to US-6.2)
 
 ---
 
@@ -518,21 +518,21 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 ##### Acceptance Criteria
 
-- [ ] A phase already marked as completed is never re-run
-- [ ] This holds true even after system restarts or re-delivery of a queue message
-- [ ] Only the failed or pending phase is executed on re-processing
+- [x] A phase already marked as completed is never re-run
+- [x] This holds true even after system restarts or re-delivery of a queue message
+- [x] Only the failed or pending phase is executed on re-processing
 
 ##### Definition of Done
 
-- [ ] Completed phase confirmed never re-executed after system restart
-- [ ] Checkpoint read fresh from database on every job pickup — no reliance on memory
-- [ ] Duplicate prevention confirmed by unit test
+- [x] Completed phase confirmed never re-executed after system restart
+- [x] Checkpoint read fresh from database on every job pickup — no reliance on memory
+- [x] Duplicate prevention confirmed by unit test
 
 ##### Checklist
 
-- [ ] Worker reads phase status from database on every pickup (not from memory)
-- [ ] Completed phase skip logic implemented and tested
-- [ ] Idempotency enforced at the database level
+- [x] Worker reads phase status from database on every pickup (not from memory)
+- [x] Completed phase skip logic implemented and tested
+- [x] Idempotency enforced at the database level
 
 ---
 
@@ -564,13 +564,11 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 ### Kanban
 
-| Backlog                     | In Progress | Review | Done |
-| --------------------------- | ----------- | ------ | ---- |
-| US-3.1: Async processing    | —           | —      | —    |
-| US-3.2: Phase handoff       | —           | —      | —    |
-| US-3.3: Automatic retry     | —           | —      | —    |
-| US-3.4: No work duplication | —           | —      | —    |
-| US-3.5: Graceful shutdown   | —           | —      | —    |
+| Backlog                   | In Progress                              | Review | Done                          |
+| ------------------------- | ---------------------------------------- | ------ | ----------------------------- |
+| US-3.5: Graceful shutdown | US-3.3: Automatic retry (backoff pending) | —      | US-3.1: Async processing      |
+| —                         | —                                        | —      | US-3.2: Phase handoff         |
+| —                         | —                                        | —      | US-3.4: No work duplication   |
 
 ---
 
