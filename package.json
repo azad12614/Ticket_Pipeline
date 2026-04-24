@@ -13,7 +13,7 @@
     "format": "prettier --write src",
     "migrate": "node migrations/migrate.ts",
     "db:verify": "docker exec -it tickets-db psql -U ticketuser -d tickets -c \"\\d tickets\"",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run"
   },
   "keywords": [],
   "author": "",
