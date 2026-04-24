@@ -27,8 +27,10 @@ export async function getTicketStatusHandler(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const ticket = await getTicket(req.params['id'] ?? '');
-    res.status(200).json({ ticketId: ticket.id, status: ticket.status, phases: {} });
+    const idParam = req.params['id'];
+    const id = Array.isArray(idParam) ? (idParam[0] ?? '') : (idParam ?? '');
+    const ticket = await getTicket(id);
+    res.status(200).json({ ticketId: ticket.id, status: ticket.status, phases: ticket.phases });
   } catch (err) {
     next(err);
   }
