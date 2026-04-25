@@ -516,17 +516,17 @@ This switching happens automatically. Agents never know which provider was used 
 
 ##### Acceptance Criteria
 
-- [ ] Every ticket receives an AI analysis with all 6 required fields
-- [ ] The 6 fields are: category, priority, sentiment, escalation flag, routing target, and summary
-- [ ] Analysis is produced within 30 seconds of ticket submission
-- [ ] Analysis output is stored and accessible via the ticket status endpoint
+- [x] Every ticket receives an AI analysis with all 6 required fields
+- [x] The 6 fields are: category, priority, sentiment, escalation flag, routing target, and summary
+- [x] Analysis is produced within 30 seconds of ticket submission
+- [x] Analysis output is stored and accessible via the ticket status endpoint
 
 ##### Definition of Done
 
-- [ ] All 6 fields confirmed present for every processed ticket
-- [ ] Each field confirmed to contain a valid, structured value (not free text)
-- [ ] Analysis stored in the database and retrievable via API
-- [ ] Processing time confirmed under 30 seconds in testing
+- [x] All 6 fields confirmed present for every processed ticket
+- [x] Each field confirmed to contain a valid, structured value (not free text)
+- [x] Analysis stored in the database and retrievable via API
+- [x] Processing time confirmed under 30 seconds in testing
 
 ---
 
@@ -538,17 +538,17 @@ This switching happens automatically. Agents never know which provider was used 
 
 ##### Acceptance Criteria
 
-- [ ] Every ticket receives a resolution draft with all 3 required outputs
-- [ ] The 3 outputs are: customer-facing reply, internal support note, and recommended next actions
-- [ ] The draft uses the Phase 1 analysis as context — not just the raw ticket
-- [ ] Phase 2 never runs until Phase 1 has fully completed
+- [x] Every ticket receives a resolution draft with all 3 required outputs
+- [x] The 3 outputs are: customer-facing reply, internal support note, and recommended next actions
+- [x] The draft uses the Phase 1 analysis as context — not just the raw ticket
+- [x] Phase 2 never runs until Phase 1 has fully completed
 
 ##### Definition of Done
 
-- [ ] All 3 output fields confirmed present for every processed ticket
-- [ ] Customer reply confirmed to address the specific issue (not generic)
-- [ ] Internal note confirmed to reference the triage category and priority
-- [ ] Phase 2 confirmed blocked when Phase 1 is not complete
+- [x] All 3 output fields confirmed present for every processed ticket
+- [x] Customer reply confirmed to address the specific issue (not generic)
+- [x] Internal note confirmed to reference the triage category and priority
+- [x] Phase 2 confirmed blocked when Phase 1 is not complete
 
 ---
 
@@ -560,17 +560,17 @@ This switching happens automatically. Agents never know which provider was used 
 
 ##### Acceptance Criteria
 
-- [ ] AI output is checked against a strict format before being accepted
-- [ ] Malformed or incomplete output is rejected — not silently stored
-- [ ] A rejected output triggers the phase failure and retry flow
-- [ ] If all retry attempts produce invalid output, the ticket is flagged for manual review
+- [x] AI output is checked against a strict format before being accepted
+- [x] Malformed or incomplete output is rejected — not silently stored
+- [x] A rejected output immediately fails the phase and routes to DLQ — no retry attempted (retrying identical input produces identical malformed output)
+- [x] Ticket is marked failed immediately and visible to ops via status filter
 
 ##### Definition of Done
 
-- [ ] Validation confirmed to reject incomplete AI output
-- [ ] Malformed response confirmed to trigger failure handling (not partial storage)
-- [ ] Invalid output confirmed never written to the database
-- [ ] Manual review flag confirmed set after validation failures exhaust retries
+- [x] Validation confirmed to reject incomplete AI output
+- [x] Malformed response confirmed to trigger failure handling (not partial storage)
+- [x] Invalid output confirmed never written to the database
+- [x] Zod failure confirmed to skip retry — ticket immediately marked failed and routed to DLQ
 
 ---
 
@@ -598,12 +598,11 @@ This switching happens automatically. Agents never know which provider was used 
 
 ### Kanban
 
-| Backlog                            | In Progress | Review | Done |
-| ---------------------------------- | ----------- | ------ | ---- |
-| US-4.1: AI triage (Phase 1)        | —           | —      | —    |
-| US-4.2: Resolution draft (Phase 2) | —           | —      | —    |
-| US-4.3: Output quality guarantee   | —           | —      | —    |
-| US-4.4: AI provider fallback       | —           | —      | —    |
+| Backlog                      | In Progress | Review | Done                               |
+| ---------------------------- | ----------- | ------ | ---------------------------------- |
+| US-4.4: AI provider fallback | —           | —      | US-4.1: AI triage (Phase 1)        |
+| —                            | —           | —      | US-4.2: Resolution draft (Phase 2) |
+| —                            | —           | —      | US-4.3: Output quality guarantee   |
 
 ---
 

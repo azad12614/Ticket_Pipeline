@@ -1,7 +1,8 @@
 import * as PortkeyModule from 'portkey-ai';
 import { FatalPhaseError } from '../lib/errors.ts';
 import logger from '../lib/logger.ts';
-import { getTicketById } from '../repositories/ticketRepo.ts';
+import { getTicketById, getTicketPhasesByTicketId } from '../repositories/ticketRepo.ts';
+import { draftOutputSchema, type DraftOutput } from '../schemas/draftSchema.ts';
 import { triageOutputSchema, type TriageOutput } from '../schemas/triageSchema.ts';
 
 type PortkeyClient = InstanceType<typeof PortkeyModule.Portkey>;
@@ -112,7 +113,99 @@ export async function triageTicket(ticketId: string): Promise<TriageOutput> {
   return parsed.data;
 }
 
+const DRAFT_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: 'draft_resolution',
+    description: 'Draft a resolution for a support ticket based on triage analysis.',
+    parameters: {
+      type: 'object',
+      properties: {
+        customer_reply: {
+          type: 'string',
+          description: 'Warm, professional customer-facing reply addressing the specific issue. Min 50 chars.',
+        },
+        internal_note: {
+          type: 'string',
+          description: 'Internal note for the agent referencing triage category, priority, and escalation status.',
+        },
+        next_actions: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific actionable next steps, 1 to 5 items.',
+          minItems: 1,
+          maxItems: 5,
+        },
+      },
+      required: ['customer_reply', 'internal_note', 'next_actions'],
+    },
+  },
+};
+
+export async function draftResolution(ticketId: string): Promise<DraftOutput> {
+  const [ticket, phases] = await Promise.all([
+    getTicketById(ticketId),
+    getTicketPhasesByTicketId(ticketId),
+  ]);
+
+  if (!ticket) throw new FatalPhaseError(`Ticket ${ticketId} not found`);
+
+  const triagePhase = phases.find(p => p.phase === 'triage' && p.status === 'success');
+  if (!triagePhase) throw new FatalPhaseError(`Triage output not available for ticket ${ticketId}`);
+
+  const triageParsed = triageOutputSchema.safeParse(triagePhase.output);
+  if (!triageParsed.success) {
+    throw new FatalPhaseError(`Stored triage output invalid: ${triageParsed.error.message}`);
+  }
+
+  const portkey = getPortkeyClient();
+  const start = Date.now();
+  logger.info({ ticketId }, 'AI draft started');
+
+  const response = await portkey.chat.completions.create(
+    {
+      model: process.env['PORTKEY_DEFAULT_MODEL'] ?? 'claude-haiku-4-5-20251001',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a support ticket resolution specialist. Draft a response using the triage analysis. Customer reply must be warm, professional, and address the specific issue. Internal note must reference the triage category, priority, and escalation status. Next actions must be specific and actionable (1–5 items).',
+        },
+        {
+          role: 'user',
+          content: `Subject: ${ticket.subject}\n\nBody: ${ticket.body}\n\nTriage Analysis:\n${JSON.stringify(triageParsed.data, null, 2)}`,
+        },
+      ],
+      tools: [DRAFT_TOOL],
+      tool_choice: { type: 'function', function: { name: 'draft_resolution' } },
+    },
+    { timeout: 30_000 },
+  );
+
+  logger.info({ ticketId, durationMs: Date.now() - start }, 'AI draft complete');
+
+  const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+  if (!toolCall || toolCall.type !== 'function') {
+    throw new FatalPhaseError('No tool call in draft response');
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(toolCall.function.arguments);
+  } catch {
+    throw new FatalPhaseError('Draft response arguments not valid JSON');
+  }
+
+  const parsed = draftOutputSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new FatalPhaseError(`Draft output failed validation: ${parsed.error.message}`);
+  }
+
+  return parsed.data;
+}
+
 export async function runPhase(ticketId: string, phase: 'triage' | 'draft'): Promise<unknown> {
   if (phase === 'triage') return triageTicket(ticketId);
-  throw new Error(`Phase '${phase}' not yet implemented`);
+  if (phase === 'draft') return draftResolution(ticketId);
+  throw new Error(`Unknown phase: ${String(phase)}`);
 }
