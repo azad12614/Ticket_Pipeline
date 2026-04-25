@@ -1,5 +1,7 @@
+import { FatalPhaseError } from '../lib/errors.ts';
 import logger from '../lib/logger.ts';
 import { receiveTickets, deleteTicketMessage, changeMessageVisibility } from '../queues/ticketQueue.ts';
+import { runPhase } from '../services/aiService.ts';
 import {
   claimPhaseForProcessing,
   completePhaseSuccess,
@@ -32,10 +34,6 @@ function isTerminalStatus(status: TicketStatus): boolean {
   return status === 'completed' || status === 'failed';
 }
 
-async function defaultProcessFn(_ticketId: string): Promise<void> {
-  return undefined;
-}
-
 function findNextPhase(phases: TicketPhase[]): PhaseName | null {
   const triage = phases.find(phase => phase.phase === 'triage');
   const draft = phases.find(phase => phase.phase === 'draft');
@@ -63,7 +61,7 @@ export async function processTicketLifecycle(
   const claimPhaseForProcessingFn = deps.claimPhaseForProcessingFn ?? claimPhaseForProcessing;
   const completePhaseSuccessFn = deps.completePhaseSuccessFn ?? completePhaseSuccess;
   const failPhaseAttemptFn = deps.failPhaseAttemptFn ?? failPhaseAttempt;
-  const processPhaseFn = deps.processPhaseFn ?? defaultProcessFn;
+  const processPhaseFn = deps.processPhaseFn ?? runPhase;
   const changeMessageVisibilityFn = deps.changeMessageVisibilityFn ?? changeMessageVisibility;
   const deleteMessageFn = deps.deleteMessageFn ?? deleteTicketMessage;
 
@@ -89,6 +87,8 @@ export async function processTicketLifecycle(
     return;
   }
 
+  logger.info({ ticketId }, 'Ticket claimed — processing started');
+
   try {
     while (true) {
       const phases = await getTicketPhasesByTicketIdFn(ticketId);
@@ -97,6 +97,7 @@ export async function processTicketLifecycle(
       if (!nextPhase) {
         await transitionTicketStatusFn(ticketId, ['processing'], 'completed');
         await deleteMessageFn(receiptHandle);
+        logger.info({ ticketId }, 'Ticket completed — all phases done');
         return;
       }
 
@@ -106,10 +107,21 @@ export async function processTicketLifecycle(
         return;
       }
 
+      logger.info({ ticketId, phase: nextPhase, attempt: phaseClaim.attempts }, 'Phase started');
+
       try {
         const output = await processPhaseFn(ticketId, nextPhase);
         await completePhaseSuccessFn(ticketId, nextPhase, output);
+        logger.info({ ticketId, phase: nextPhase }, 'Phase completed');
       } catch (phaseError) {
+        if (phaseError instanceof FatalPhaseError) {
+          logger.error({ err: phaseError, ticketId, phase: nextPhase }, 'Fatal phase error — skipping retry');
+          await failPhaseAttemptFn(ticketId, nextPhase);
+          await transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
+          await changeMessageVisibilityFn(receiptHandle, 0);
+          return;
+        }
+
         logger.error({ err: phaseError, ticketId, phase: nextPhase }, 'Phase processing failed');
         const failedPhase = await failPhaseAttemptFn(ticketId, nextPhase);
 

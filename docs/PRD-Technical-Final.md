@@ -95,6 +95,7 @@ src/
 ├── controllers/     # Request/response handling, calls services
 ├── services/        # Business logic
 │   ├── ticketService.ts
+│   ├── aiService.ts
 │   ├── phaseService.ts
 │   └── replayService.ts
 ├── repositories/    # DB access layer (all SQL lives here)
@@ -104,15 +105,12 @@ src/
 ├── queues/          # SQS producer & consumer
 │   ├── producer.ts
 │   └── consumer.ts
-├── adapters/        # AI adapter (Portkey)
-│   ├── phase1Adapter.ts
-│   └── phase2Adapter.ts
 ├── sockets/         # Socket.io setup & event emitters
 │   ├── socketServer.ts
 │   └── emitter.ts
 ├── schemas/         # Zod validation schemas
-│   ├── phase1Schema.ts
-│   └── phase2Schema.ts
+│   ├── triageSchema.ts
+│   └── draftSchema.ts
 ├── workers/         # SQS worker long-poll loop
 │   └── ticketWorker.ts
 ├── middleware/      # Express middleware
@@ -147,7 +145,7 @@ Portkey handles provider routing. The worker calls one unified Portkey endpoint 
 
 Portkey configured with `strategy.mode = "fallback"` targeting Anthropic → OpenAI → Google in order. All provider API keys stored in env vars, never hardcoded.
 
-Two plain exported functions — no shared interface: `triageTicket(ticket)` in `phase1Adapter.ts`, `draftResolution(ticket, triage)` in `phase2Adapter.ts`. Both call Portkey — never AI providers directly. No interface: nothing is polymorphic, Portkey handles provider switching transparently.
+Two plain exported functions — no shared interface: `triageTicket(ticket)` in `aiService (triage).ts`, `draftResolution(ticket, triage)` in `aiService (draft).ts`. Both call Portkey — never AI providers directly. No interface: nothing is polymorphic, Portkey handles provider switching transparently.
 
 Every Portkey request includes metadata: `{ ticketId, phase, attempt }` for Portkey's observability dashboard and cross-system tracing via `x-portkey-trace-id`.
 
@@ -161,11 +159,11 @@ Tool use is enforced via Portkey to guarantee structured JSON output from all th
 
 **Phase 1 — `triageOutputSchema` fields:**
 
-- `category`: `billing | technical | account | feature_request | other`
+- `category`: `billing | technical | account | general | other`
 - `priority`: `critical | high | medium | low`
 - `sentiment`: `positive | neutral | negative | frustrated`
 - `escalation`: boolean
-- `routingTarget`: `tier1 | tier2 | billing_team | engineering | account_management`
+- `routing_target`: `support | billing-team | technical-team | account-team`
 - `summary`: string, min 10 chars, max 300 chars
 
 **Phase 2 — `draftOutputSchema` fields:**
@@ -180,19 +178,19 @@ Tool use is enforced via Portkey to guarantee structured JSON output from all th
 
 ### 3.6 Prompt Design Principles
 
-Exact prompt text lives in code (`phase1Adapter.ts`, `phase2Adapter.ts`). These principles define what each prompt must achieve.
+Exact prompt text lives in code (`aiService (triage).ts`, `aiService (draft).ts`). These principles define what each prompt must achieve.
 
 **Phase 1 — Triage Prompt:**
 
 - **Receives:** Raw ticket subject and body
-- **Must return:** All 6 fields of `Phase1Schema` via tool use — no free-form text
+- **Must return:** All 6 fields of `triageSchema` via tool use — no free-form text
 - **Principle:** Classify strictly from the allowed enums — do not invent categories
 - **Principle:** Summary must be one sentence, factual, under 300 characters
 
 **Phase 2 — Resolution Prompt:**
 
 - **Receives:** Original ticket subject and body + full Phase 1 structured output (injected as JSON)
-- **Must return:** All 3 fields of `Phase2Schema` via tool use
+- **Must return:** All 3 fields of `draftSchema` via tool use
 - **Principle:** Customer reply must be warm, professional, and address the specific issue — not generic
 - **Principle:** Internal note must reference the triage category, priority, and escalation flag
 - **Principle:** Next actions must be specific and actionable (1–5 items)
@@ -288,9 +286,7 @@ All configuration is externalized. No hardcoded values anywhere in the codebase.
 | `SQS_DLQ_URL`       | Dead letter queue URL      | `http://localhost:4566/000000000000/ticket-processing-dlq`   |
 | `SQS_ENDPOINT`      | LocalStack endpoint        | `http://localhost:4566`                                      |
 | `PORTKEY_API_KEY`   | Portkey gateway API key    | `pk-...`                                                     |
-| `ANTHROPIC_API_KEY` | Anthropic virtual key      | `sk-ant-...`                                                 |
-| `OPENAI_API_KEY`    | OpenAI virtual key         | `sk-...`                                                     |
-| `GEMINI_API_KEY`    | Google Gemini virtual key  | `AIza...`                                                    |
+| `PORTKEY_CONFIG`    | Portkey config ID (fallback chain + model selection managed in Portkey dashboard) | `pc-...` |
 | `PORT`              | Express server port        | `3000`                                                       |
 | `LOG_LEVEL`         | Pino log level             | `info`                                                       |
 
@@ -307,8 +303,8 @@ Strict dependency order — each layer must be complete and passing before the n
 | **1 — Data Foundation**            | DB schema, migrations, Postgres pool, SQS client, Pino                                  | E1-T1, E1-T2, E1-T3, E1-T4, E1-T5, E1-T7, E1-T8, E1-T10 |
 | **2 — API Surface**                | Express, `POST /tickets`, `GET /tickets/:id` _(event history excluded until Epic 6)_    | E2-T1, E2-T2, E2-T3                                     |
 | **3 — Worker Core**                | SQS consumer, phase checkpoint reader, orchestrator, retry backoff, DLQ routing         | E3-T1, E3-T2, E3-T3, E3-T4, E3-T5                       |
-| **4 — AI Phase 1**                 | Portkey setup, `Phase1Schema`, Phase 1 adapter, Zod failure flow                        | E4-T1, E4-T3, E4-T4, E4-T5, E4-T8                       |
-| **5 — Phase Handoff + AI Phase 2** | Phase 1 → Phase 2 re-enqueue, `Phase2Schema`, Phase 2 adapter, Phase 1 completion guard | E3-T3 _(handoff)_, E4-T6, E4-T7, E4-T12                 |
+| **4 — AI Phase 1**                 | Portkey setup, `triageSchema`, Phase 1 adapter, Zod failure flow                        | E4-T1, E4-T3, E4-T4, E4-T5, E4-T8                       |
+| **5 — Phase Handoff + AI Phase 2** | Phase 1 → Phase 2 re-enqueue, `draftSchema`, Phase 2 adapter, Phase 1 completion guard | E3-T3 _(handoff)_, E4-T6, E4-T7, E4-T12                 |
 
 ### Deferred — Non-MVP
 
@@ -556,8 +552,8 @@ Implement Phase 1 (triage) and Phase 2 (resolution draft) using Portkey as the u
 
 ### Acceptance Criteria
 
-- [ ] `phase1Adapter` calls Portkey with tool use schema matching `Phase1Schema` exactly
-- [ ] `phase2Adapter` receives Phase 1 output as structured JSON context and validates with `Phase2Schema`
+- [ ] `aiService (triage)` calls Portkey with tool use schema matching `triageSchema` exactly
+- [ ] `aiService (draft)` receives Phase 1 output as structured JSON context and validates with `draftSchema`
 - [ ] Zod `safeParse` used — errors handled gracefully, never thrown
 - [ ] Zod validation failure: phase marked `failed` immediately, no retry (fatal)
 - [ ] Network/timeout failure: phase re-enters retry queue (retryable)
@@ -572,8 +568,8 @@ Implement Phase 1 (triage) and Phase 2 (resolution draft) using Portkey as the u
 
 ### Definition of Done
 
-- [ ] Phase 1 output validated against `Phase1Schema` before DB write — all 6 fields present
-- [ ] Phase 2 output validated against `Phase2Schema` before DB write — all 3 fields present
+- [ ] Phase 1 output validated against `triageSchema` before DB write — all 6 fields present
+- [ ] Phase 2 output validated against `draftSchema` before DB write — all 3 fields present
 - [ ] Portkey fallback tested: Claude disabled → OpenAI serves request correctly
 - [ ] Zod validation failure correctly triggers phase failure (not retry) — verified by unit test
 - [ ] Tool use schema confirmed to match Zod schema exactly (no drift)
@@ -586,9 +582,9 @@ Implement Phase 1 (triage) and Phase 2 (resolution draft) using Portkey as the u
 | E4-T1  | Set up Portkey SDK and configure virtual keys for all 3 providers        | 3   | Backlog |
 | E4-T2  | Configure Portkey fallback strategy in gateway config                    | 2   | Backlog |
 | E4-T3  | Define `AIProviderAdapter` interface in TypeScript                       | 1   | Backlog |
-| E4-T4  | Implement `Phase1Schema` Zod schema                                      | 2   | Backlog |
+| E4-T4  | Implement `triageSchema` Zod schema                                      | 2   | Backlog |
 | E4-T5  | Implement Phase 1 adapter with tool use prompt and Zod validation        | 5   | Backlog |
-| E4-T6  | Implement `Phase2Schema` Zod schema                                      | 2   | Backlog |
+| E4-T6  | Implement `draftSchema` Zod schema                                      | 2   | Backlog |
 | E4-T7  | Implement Phase 2 adapter with Phase 1 context injection                 | 5   | Backlog |
 | E4-T8  | Implement Zod failure → phase failure flow (skip retry)                  | 2   | Backlog |
 | E4-T9  | Log AI call duration, provider used, token counts, and trace ID via Pino | 2   | Backlog |
@@ -599,7 +595,7 @@ Implement Phase 1 (triage) and Phase 2 (resolution draft) using Portkey as the u
 ### Checklist
 
 - [ ] Portkey virtual keys stored in `.env`, never hardcoded
-- [ ] Tool use schema matches `Phase1Schema` and `Phase2Schema` exactly
+- [ ] Tool use schema matches `triageSchema` and `draftSchema` exactly
 - [ ] Phase 2 prompt template injects Phase 1 output as structured JSON context
 - [ ] `safeParse` used in both adapters — no uncaught Zod throws
 - [ ] AI call timeout set to 30s at Portkey SDK level
@@ -613,9 +609,9 @@ Implement Phase 1 (triage) and Phase 2 (resolution draft) using Portkey as the u
 | ----------------------- | ----------- | ------ | ---- |
 | E4-T1: Portkey setup    | —           | —      | —    |
 | E4-T2: Fallback config  | —           | —      | —    |
-| E4-T4: Phase1Schema     | —           | —      | —    |
+| E4-T4: triageSchema     | —           | —      | —    |
 | E4-T5: Phase 1 adapter  | —           | —      | —    |
-| E4-T6: Phase2Schema     | —           | —      | —    |
+| E4-T6: draftSchema     | —           | —      | —    |
 | E4-T7: Phase 2 adapter  | —           | —      | —    |
 | E4-T8: Zod failure flow | —           | —      | —    |
 | E4-T10: Unit tests      | —           | —      | —    |
