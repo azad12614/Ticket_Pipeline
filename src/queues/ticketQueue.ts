@@ -4,6 +4,7 @@ import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
   PurgeQueueCommand,
+  ChangeMessageVisibilityCommand,
 } from '@aws-sdk/client-sqs';
 
 const QUEUE_URL = process.env['SQS_QUEUE_URL']!;
@@ -57,6 +58,19 @@ export async function deleteTicketMessage(receiptHandle: string): Promise<void> 
     new DeleteMessageCommand({
       QueueUrl: QUEUE_URL,
       ReceiptHandle: receiptHandle,
+    }),
+  );
+}
+
+export async function changeMessageVisibility(
+  receiptHandle: string,
+  delaySeconds: number,
+): Promise<void> {
+  await sqsClient.send(
+    new ChangeMessageVisibilityCommand({
+      QueueUrl: QUEUE_URL,
+      ReceiptHandle: receiptHandle,
+      VisibilityTimeout: delaySeconds,
     }),
   );
 }

@@ -25,7 +25,7 @@ function buildPhaseView(phases: TicketPhase[]): TicketWithPhases['phases'] {
     phaseView[phase.phase] = {
       status: phase.status,
       attempts: phase.attempts,
-      output: phase.output,
+        output: phase.status === 'success' ? phase.output : null,
     };
   }
 
@@ -118,7 +118,7 @@ export async function claimPhaseForProcessing(
 ): Promise<TicketPhase | null> {
   const result = await pool.query(
     `UPDATE ticket_phases
-     SET status = 'progress', started_at = NOW(), completed_at = NULL
+     SET status = 'progress', attempts = attempts + 1, started_at = NOW(), completed_at = NULL
      WHERE ticket_id = $1
        AND phase = $2
        AND status = ANY($3::phase_status[])
@@ -155,7 +155,7 @@ export async function failPhaseAttempt(
 ): Promise<TicketPhase | null> {
   const result = await pool.query(
     `UPDATE ticket_phases
-     SET status = 'failure', attempts = attempts + 1, output = NULL, completed_at = NOW()
+     SET status = 'failure', output = NULL, completed_at = NOW()
      WHERE ticket_id = $1
        AND phase = $2
        AND status = 'progress'
