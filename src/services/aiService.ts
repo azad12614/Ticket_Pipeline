@@ -90,12 +90,13 @@ const DRAFT_TOOL = {
 };
 
 export class AiService {
+  private readonly repo: ITicketRepo;
+  private readonly portkey: PortkeyClient;
   private readonly phaseHandlers: Record<PhaseName, PhaseHandler>;
 
-  constructor(
-    private readonly repo: ITicketRepo,
-    private readonly portkey: PortkeyClient,
-  ) {
+  constructor(repo: ITicketRepo, portkey: PortkeyClient) {
+    this.repo = repo;
+    this.portkey = portkey;
     this.phaseHandlers = {
       triage: (ticketId) => this.triageTicket(ticketId),
       draft: (ticketId) => this.draftResolution(ticketId),
@@ -133,7 +134,7 @@ export class AiService {
     if (!response.choices.length) {
       throw new FatalPhaseError('Empty choices in triage response');
     }
-    const toolCall = response.choices[0].message?.tool_calls?.[0];
+    const toolCall = response.choices[0]?.message?.tool_calls?.[0];
     if (!toolCall || toolCall.type !== 'function') {
       throw new FatalPhaseError('No tool call in triage response');
     }
@@ -196,7 +197,7 @@ export class AiService {
     if (!response.choices.length) {
       throw new FatalPhaseError('Empty choices in draft response');
     }
-    const toolCall = response.choices[0].message?.tool_calls?.[0];
+    const toolCall = response.choices[0]?.message?.tool_calls?.[0];
     if (!toolCall || toolCall.type !== 'function') {
       throw new FatalPhaseError('No tool call in draft response');
     }

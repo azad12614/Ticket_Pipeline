@@ -5,9 +5,12 @@ import { runPhase } from '../services/aiService.ts';
 import {
   claimPhaseForProcessing,
   completePhaseSuccess,
+  completeTicket,
   failPhaseAttempt,
+  failTicket,
   getTicketById,
   getTicketPhasesByTicketId,
+  insertEvent,
   transitionTicketStatus,
   updateTicketStatus,
 } from '../repositories/ticketRepo.ts';
@@ -25,6 +28,9 @@ type RepoDeps = {
   claimPhaseForProcessingFn?: typeof claimPhaseForProcessing;
   completePhaseSuccessFn?: typeof completePhaseSuccess;
   failPhaseAttemptFn?: typeof failPhaseAttempt;
+  completeTicketFn?: typeof completeTicket;
+  failTicketFn?: typeof failTicket;
+  insertEventFn?: typeof insertEvent;
 };
 
 type QueueDeps = {
@@ -49,6 +55,9 @@ function resolveDeps(deps: WorkerDeps): ResolvedDeps {
     claimPhaseForProcessingFn: deps.claimPhaseForProcessingFn ?? claimPhaseForProcessing,
     completePhaseSuccessFn: deps.completePhaseSuccessFn ?? completePhaseSuccess,
     failPhaseAttemptFn: deps.failPhaseAttemptFn ?? failPhaseAttempt,
+    completeTicketFn: deps.completeTicketFn ?? completeTicket,
+    failTicketFn: deps.failTicketFn ?? failTicket,
+    insertEventFn: deps.insertEventFn ?? insertEvent,
     changeMessageVisibilityFn: deps.changeMessageVisibilityFn ?? changeMessageVisibility,
     deleteMessageFn: deps.deleteMessageFn ?? deleteTicketMessage,
     processPhaseFn: deps.processPhaseFn ?? runPhase,
@@ -83,14 +92,18 @@ async function handlePhaseError(
 ): Promise<void> {
   if (phaseError instanceof FatalPhaseError) {
     logger.error({ err: phaseError, ticketId, phase }, 'Fatal phase error — skipping retry');
-    await deps.failPhaseAttemptFn(ticketId, phase);
-    await deps.transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
+    const failedPhase = await deps.failPhaseAttemptFn(ticketId, phase, phaseError.message);
+    await deps.failTicketFn(ticketId);
+    if (failedPhase) {
+      await deps.insertEventFn(ticketId, 'dlq_routed', phase, { attempt: failedPhase.attempts, reason: 'fatal_error' });
+    }
     await deps.changeMessageVisibilityFn(receiptHandle, 0);
     return;
   }
 
   logger.error({ err: phaseError, ticketId, phase }, 'Phase processing failed');
-  const failedPhase = await deps.failPhaseAttemptFn(ticketId, phase);
+  const errorMsg = phaseError instanceof Error ? phaseError.message : String(phaseError);
+  const failedPhase = await deps.failPhaseAttemptFn(ticketId, phase, errorMsg);
 
   if (!failedPhase) {
     await deps.updateTicketStatusFn(ticketId, 'failed');
@@ -99,11 +112,14 @@ async function handlePhaseError(
   }
 
   if (failedPhase.attempts >= 3) {
-    await deps.transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
+    await deps.failTicketFn(ticketId);
+    await deps.insertEventFn(ticketId, 'dlq_routed', phase, { attempt: failedPhase.attempts, reason: 'max_attempts' });
     await deps.changeMessageVisibilityFn(receiptHandle, 0);
   } else {
+    const backoff = backoffSeconds(failedPhase.attempts);
     await deps.transitionTicketStatusFn(ticketId, ['processing'], 'queued');
-    await deps.changeMessageVisibilityFn(receiptHandle, backoffSeconds(failedPhase.attempts));
+    await deps.insertEventFn(ticketId, 'retry_scheduled', phase, { attempt: failedPhase.attempts, backoff_seconds: backoff });
+    await deps.changeMessageVisibilityFn(receiptHandle, backoff);
   }
 }
 
@@ -117,7 +133,7 @@ async function orchestratePhases(
     const nextPhase = findNextPhase(phases);
 
     if (!nextPhase) {
-      await deps.transitionTicketStatusFn(ticketId, ['processing'], 'completed');
+      await deps.completeTicketFn(ticketId);
       await deps.deleteMessageFn(receiptHandle);
       logger.info({ ticketId }, 'Ticket completed — all phases done');
       return;
@@ -177,7 +193,7 @@ export async function processTicketLifecycle(
     await orchestratePhases(ticketId, receiptHandle, resolved);
   } catch (error) {
     logger.error({ err: error, ticketId }, 'Ticket processing failed');
-    const failed = await resolved.transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
+    const failed = await resolved.failTicketFn(ticketId);
     if (!failed) {
       await resolved.updateTicketStatusFn(ticketId, 'failed');
     }

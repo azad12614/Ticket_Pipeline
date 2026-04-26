@@ -69,6 +69,10 @@ function makeFakeRepo(): ITicketRepo {
     claimPhaseForProcessing: vi.fn(),
     completePhaseSuccess: vi.fn(),
     failPhaseAttempt: vi.fn(),
+    completeTicket: vi.fn(),
+    failTicket: vi.fn(),
+    insertEvent: vi.fn(),
+    getEventsByTicketId: vi.fn(),
   };
 }
 

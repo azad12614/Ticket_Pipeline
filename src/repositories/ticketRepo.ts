@@ -1,9 +1,12 @@
+import type { PoolClient } from 'pg';
 import { v7 as uuidv7 } from 'uuid';
 import { pool } from '../lib/db.ts';
 import { ticketSchema } from '../schemas/ticketSchema.ts';
 import { ticketPhaseSchema } from '../schemas/phaseSchema.ts';
+import { ticketEventSchema } from '../schemas/eventSchema.ts';
 import type { TicketInput, Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketPhase } from '../schemas/phaseSchema.ts';
+import type { TicketEvent } from '../schemas/eventSchema.ts';
 
 export type TicketPhaseView = {
   status: TicketPhase['status'];
@@ -13,6 +16,7 @@ export type TicketPhaseView = {
 
 export type TicketWithPhases = Ticket & {
   phases: Record<TicketPhase['phase'], TicketPhaseView>;
+  events: TicketEvent[];
 };
 
 function buildPhaseView(phases: TicketPhase[]): TicketWithPhases['phases'] {
@@ -25,11 +29,44 @@ function buildPhaseView(phases: TicketPhase[]): TicketWithPhases['phases'] {
     phaseView[phase.phase] = {
       status: phase.status,
       attempts: phase.attempts,
-        output: phase.status === 'success' ? phase.output : null,
+      output: phase.status === 'success' ? phase.output : null,
     };
   }
 
   return phaseView;
+}
+
+async function insertEventInTx(
+  client: PoolClient,
+  ticketId: string,
+  eventType: TicketEvent['event_type'],
+  phase: TicketEvent['phase'],
+  payload: unknown,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO ticket_events (id, ticket_id, phase, event_type, payload) VALUES ($1, $2, $3, $4, $5)`,
+    [uuidv7(), ticketId, phase ?? null, eventType, payload != null ? JSON.stringify(payload) : null],
+  );
+}
+
+export async function insertEvent(
+  ticketId: string,
+  eventType: TicketEvent['event_type'],
+  phase: TicketEvent['phase'],
+  payload: unknown,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO ticket_events (id, ticket_id, phase, event_type, payload) VALUES ($1, $2, $3, $4, $5)`,
+    [uuidv7(), ticketId, phase ?? null, eventType, payload != null ? JSON.stringify(payload) : null],
+  );
+}
+
+export async function getEventsByTicketId(ticketId: string): Promise<TicketEvent[]> {
+  const result = await pool.query(
+    'SELECT * FROM ticket_events WHERE ticket_id = $1 ORDER BY created_at ASC',
+    [ticketId],
+  );
+  return result.rows.map(row => ticketEventSchema.parse(row));
 }
 
 export async function createTicket(input: TicketInput): Promise<Ticket> {
@@ -52,6 +89,8 @@ export async function createTicket(input: TicketInput): Promise<Ticket> {
       [uuidv7(), uuidv7(), id],
     );
 
+    await insertEventInTx(client, id, 'ticket_created', null, null);
+
     await client.query('COMMIT');
     return ticketSchema.parse(ticketInsert.rows[0]);
   } catch (error) {
@@ -73,7 +112,6 @@ export async function getTicketPhasesByTicketId(ticketId: string): Promise<Ticke
     'SELECT * FROM ticket_phases WHERE ticket_id = $1 ORDER BY phase ASC',
     [ticketId],
   );
-
   return result.rows.map(row => ticketPhaseSchema.parse(row));
 }
 
@@ -81,10 +119,15 @@ export async function getTicketWithPhasesById(id: string): Promise<TicketWithPha
   const ticket = await getTicketById(id);
   if (!ticket) return null;
 
-  const phases = await getTicketPhasesByTicketId(id);
+  const [phases, events] = await Promise.all([
+    getTicketPhasesByTicketId(id),
+    getEventsByTicketId(id),
+  ]);
+
   return {
     ...ticket,
     phases: buildPhaseView(phases),
+    events,
   };
 }
 
@@ -112,22 +155,82 @@ export async function transitionTicketStatus(
   return ticketSchema.parse(result.rows[0]);
 }
 
+export async function completeTicket(ticketId: string): Promise<Ticket | null> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE tickets SET status='completed' WHERE id=$1 AND status='processing' RETURNING *`,
+      [ticketId],
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    await insertEventInTx(client, ticketId, 'ticket_completed', null, null);
+    await client.query('COMMIT');
+    return ticketSchema.parse(result.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function failTicket(ticketId: string): Promise<Ticket | null> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE tickets SET status='failed' WHERE id=$1 AND status=ANY($2::ticket_status[]) RETURNING *`,
+      [ticketId, ['queued', 'processing']],
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    await insertEventInTx(client, ticketId, 'ticket_failed', null, null);
+    await client.query('COMMIT');
+    return ticketSchema.parse(result.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function claimPhaseForProcessing(
   ticketId: string,
   phase: TicketPhase['phase'],
 ): Promise<TicketPhase | null> {
-  const result = await pool.query(
-    `UPDATE ticket_phases
-     SET status = 'progress', attempts = attempts + 1, started_at = NOW(), completed_at = NULL
-     WHERE ticket_id = $1
-       AND phase = $2
-       AND status = ANY($3::phase_status[])
-     RETURNING *`,
-    [ticketId, phase, ['started', 'failure']],
-  );
-
-  if (!result.rows[0]) return null;
-  return ticketPhaseSchema.parse(result.rows[0]);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE ticket_phases
+       SET status = 'progress', attempts = attempts + 1, started_at = NOW(), completed_at = NULL
+       WHERE ticket_id = $1
+         AND phase = $2
+         AND status = ANY($3::phase_status[])
+       RETURNING *`,
+      [ticketId, phase, ['started', 'failure']],
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    const claimed = ticketPhaseSchema.parse(result.rows[0]);
+    await insertEventInTx(client, ticketId, 'phase_started', phase, { attempt: claimed.attempts });
+    await client.query('COMMIT');
+    return claimed;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function completePhaseSuccess(
@@ -135,36 +238,64 @@ export async function completePhaseSuccess(
   phase: TicketPhase['phase'],
   output: unknown,
 ): Promise<TicketPhase | null> {
-  const result = await pool.query(
-    `UPDATE ticket_phases
-     SET status = 'success', output = $3, completed_at = NOW()
-     WHERE ticket_id = $1
-       AND phase = $2
-       AND status = 'progress'
-     RETURNING *`,
-    [ticketId, phase, JSON.stringify(output)],
-  );
-
-  if (!result.rows[0]) return null;
-  return ticketPhaseSchema.parse(result.rows[0]);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE ticket_phases
+       SET status = 'success', output = $3, completed_at = NOW()
+       WHERE ticket_id = $1
+         AND phase = $2
+         AND status = 'progress'
+       RETURNING *`,
+      [ticketId, phase, JSON.stringify(output)],
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    await insertEventInTx(client, ticketId, 'phase_completed', phase, null);
+    await client.query('COMMIT');
+    return ticketPhaseSchema.parse(result.rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function failPhaseAttempt(
   ticketId: string,
   phase: TicketPhase['phase'],
+  reason?: string,
 ): Promise<TicketPhase | null> {
-  const result = await pool.query(
-    `UPDATE ticket_phases
-     SET status = 'failure', output = NULL, completed_at = NOW()
-     WHERE ticket_id = $1
-       AND phase = $2
-       AND status = 'progress'
-     RETURNING *`,
-    [ticketId, phase],
-  );
-
-  if (!result.rows[0]) return null;
-  return ticketPhaseSchema.parse(result.rows[0]);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE ticket_phases
+       SET status = 'failure', output = NULL, completed_at = NOW()
+       WHERE ticket_id = $1
+         AND phase = $2
+         AND status = 'progress'
+       RETURNING *`,
+      [ticketId, phase],
+    );
+    if (!result.rows[0]) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    const failed = ticketPhaseSchema.parse(result.rows[0]);
+    await insertEventInTx(client, ticketId, 'phase_failed', phase, reason ? { reason } : null);
+    await client.query('COMMIT');
+    return failed;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export interface ITicketRepo {
@@ -174,9 +305,13 @@ export interface ITicketRepo {
   getTicketWithPhasesById(id: string): Promise<TicketWithPhases | null>;
   updateTicketStatus(id: string, status: Ticket['status']): Promise<Ticket>;
   transitionTicketStatus(id: string, fromStatuses: Ticket['status'][], toStatus: Ticket['status']): Promise<Ticket | null>;
+  completeTicket(ticketId: string): Promise<Ticket | null>;
+  failTicket(ticketId: string): Promise<Ticket | null>;
   claimPhaseForProcessing(ticketId: string, phase: TicketPhase['phase']): Promise<TicketPhase | null>;
   completePhaseSuccess(ticketId: string, phase: TicketPhase['phase'], output: unknown): Promise<TicketPhase | null>;
-  failPhaseAttempt(ticketId: string, phase: TicketPhase['phase']): Promise<TicketPhase | null>;
+  failPhaseAttempt(ticketId: string, phase: TicketPhase['phase'], reason?: string): Promise<TicketPhase | null>;
+  insertEvent(ticketId: string, eventType: TicketEvent['event_type'], phase: TicketEvent['phase'], payload: unknown): Promise<void>;
+  getEventsByTicketId(ticketId: string): Promise<TicketEvent[]>;
 }
 
 export const postgresTicketRepo: ITicketRepo = {
@@ -186,7 +321,11 @@ export const postgresTicketRepo: ITicketRepo = {
   getTicketWithPhasesById,
   updateTicketStatus,
   transitionTicketStatus,
+  completeTicket,
+  failTicket,
   claimPhaseForProcessing,
   completePhaseSuccess,
   failPhaseAttempt,
+  insertEvent,
+  getEventsByTicketId,
 };

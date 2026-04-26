@@ -24,6 +24,7 @@ function makeInMemoryService(): AppDeps {
           triage: { status: 'started', attempts: 0, output: null },
           draft: { status: 'started', attempts: 0, output: null },
         },
+        events: [],
       };
       store.set(id, ticket);
       return ticket;
