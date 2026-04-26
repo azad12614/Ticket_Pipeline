@@ -224,13 +224,12 @@ export class AiService {
   }
 }
 
-let _defaultService: AiService | null = null;
+export type RunPhaseDeps = {
+  repo?: ITicketRepo;
+  portkey?: PortkeyClient;
+};
 
-function getDefaultService(): AiService {
-  if (!_defaultService) _defaultService = new AiService(postgresTicketRepo, createPortkeyClient());
-  return _defaultService;
-}
-
-export function runPhase(ticketId: string, phase: PhaseName): Promise<unknown> {
-  return getDefaultService().runPhase(ticketId, phase);
+export function runPhase(ticketId: string, phase: PhaseName, deps: RunPhaseDeps = {}): Promise<unknown> {
+  const service = new AiService(deps.repo ?? postgresTicketRepo, deps.portkey ?? createPortkeyClient());
+  return service.runPhase(ticketId, phase);
 }
