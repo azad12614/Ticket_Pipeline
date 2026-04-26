@@ -1,11 +1,8 @@
 import pg from 'pg';
+import { config } from './config.ts';
 
 const { Pool } = pg;
 
-const connectionString = process.env['DATABASE_URL'];
-
-if (!connectionString && process.env['NODE_ENV'] !== 'test') {
-  throw new Error('DATABASE_URL environment variable is required');
-}
-
-export const pool = connectionString ? new Pool({ connectionString }) : new Pool();
+export const pool = config.databaseUrl
+  ? new Pool({ connectionString: config.databaseUrl })
+  : new Pool();

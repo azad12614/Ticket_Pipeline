@@ -1,4 +1,5 @@
 import * as PortkeyModule from 'portkey-ai';
+import { config } from '../lib/config.ts';
 import { FatalPhaseError } from '../lib/errors.ts';
 import logger from '../lib/logger.ts';
 import { getTicketById, getTicketPhasesByTicketId } from '../repositories/ticketRepo.ts';
@@ -11,11 +12,9 @@ let _portkey: PortkeyClient | null = null;
 
 function getPortkeyClient(): PortkeyClient {
   if (!_portkey) {
-    const apiKey = process.env['PORTKEY_API_KEY'];
-    if (!apiKey) throw new Error('PORTKEY_API_KEY not set');
     _portkey = new PortkeyModule.Portkey({
-      apiKey,
-      config: process.env['PORTKEY_CONFIG'],
+      apiKey: config.portkey.apiKey!,
+      config: config.portkey.config,
     });
   }
   return _portkey;
@@ -73,7 +72,6 @@ export async function triageTicket(ticketId: string): Promise<TriageOutput> {
 
   const response = await portkey.chat.completions.create(
     {
-      model: process.env['PORTKEY_DEFAULT_MODEL'] ?? 'claude-haiku-4-5-20251001',
       messages: [
         {
           role: 'system',
@@ -164,7 +162,6 @@ export async function draftResolution(ticketId: string): Promise<DraftOutput> {
 
   const response = await portkey.chat.completions.create(
     {
-      model: process.env['PORTKEY_DEFAULT_MODEL'] ?? 'claude-haiku-4-5-20251001',
       messages: [
         {
           role: 'system',

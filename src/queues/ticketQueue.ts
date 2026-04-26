@@ -6,17 +6,16 @@ import {
   PurgeQueueCommand,
   ChangeMessageVisibilityCommand,
 } from '@aws-sdk/client-sqs';
+import { config } from '../lib/config.ts';
 
-const QUEUE_URL = process.env['SQS_QUEUE_URL']!;
-
-const endpoint = process.env['SQS_ENDPOINT'];
+const QUEUE_URL = config.sqs.queueUrl;
 
 export const sqsClient = new SQSClient({
-  region: process.env['AWS_REGION'] ?? 'us-east-1',
-  ...(endpoint ? { endpoint } : {}),
+  region: config.sqs.region,
+  ...(config.sqs.endpoint ? { endpoint: config.sqs.endpoint } : {}),
   credentials: {
-    accessKeyId: process.env['AWS_ACCESS_KEY_ID'] ?? 'test',
-    secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY'] ?? 'test',
+    accessKeyId: config.sqs.accessKeyId,
+    secretAccessKey: config.sqs.secretAccessKey,
   },
 });
 
