@@ -166,3 +166,27 @@ export async function failPhaseAttempt(
   if (!result.rows[0]) return null;
   return ticketPhaseSchema.parse(result.rows[0]);
 }
+
+export interface ITicketRepo {
+  createTicket(input: TicketInput): Promise<Ticket>;
+  getTicketById(id: string): Promise<Ticket | null>;
+  getTicketPhasesByTicketId(ticketId: string): Promise<TicketPhase[]>;
+  getTicketWithPhasesById(id: string): Promise<TicketWithPhases | null>;
+  updateTicketStatus(id: string, status: Ticket['status']): Promise<Ticket>;
+  transitionTicketStatus(id: string, fromStatuses: Ticket['status'][], toStatus: Ticket['status']): Promise<Ticket | null>;
+  claimPhaseForProcessing(ticketId: string, phase: TicketPhase['phase']): Promise<TicketPhase | null>;
+  completePhaseSuccess(ticketId: string, phase: TicketPhase['phase'], output: unknown): Promise<TicketPhase | null>;
+  failPhaseAttempt(ticketId: string, phase: TicketPhase['phase']): Promise<TicketPhase | null>;
+}
+
+export const postgresTicketRepo: ITicketRepo = {
+  createTicket,
+  getTicketById,
+  getTicketPhasesByTicketId,
+  getTicketWithPhasesById,
+  updateTicketStatus,
+  transitionTicketStatus,
+  claimPhaseForProcessing,
+  completePhaseSuccess,
+  failPhaseAttempt,
+};

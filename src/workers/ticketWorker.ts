@@ -17,7 +17,7 @@ import type { TicketPhase } from '../schemas/phaseSchema.ts';
 type TicketStatus = Ticket['status'];
 type PhaseName = TicketPhase['phase'];
 
-type WorkerDeps = {
+type RepoDeps = {
   getTicketByIdFn?: typeof getTicketById;
   getTicketPhasesByTicketIdFn?: typeof getTicketPhasesByTicketId;
   transitionTicketStatusFn?: typeof transitionTicketStatus;
@@ -25,10 +25,35 @@ type WorkerDeps = {
   claimPhaseForProcessingFn?: typeof claimPhaseForProcessing;
   completePhaseSuccessFn?: typeof completePhaseSuccess;
   failPhaseAttemptFn?: typeof failPhaseAttempt;
-  processPhaseFn?: (ticketId: string, phase: PhaseName) => Promise<unknown>;
+};
+
+type QueueDeps = {
   changeMessageVisibilityFn?: (receiptHandle: string, delaySeconds: number) => Promise<void>;
   deleteMessageFn?: (receiptHandle: string) => Promise<void>;
 };
+
+type PhaseDeps = {
+  processPhaseFn?: (ticketId: string, phase: PhaseName) => Promise<unknown>;
+};
+
+export type WorkerDeps = RepoDeps & QueueDeps & PhaseDeps;
+
+type ResolvedDeps = Required<RepoDeps> & Required<QueueDeps> & Required<PhaseDeps>;
+
+function resolveDeps(deps: WorkerDeps): ResolvedDeps {
+  return {
+    getTicketByIdFn: deps.getTicketByIdFn ?? getTicketById,
+    getTicketPhasesByTicketIdFn: deps.getTicketPhasesByTicketIdFn ?? getTicketPhasesByTicketId,
+    transitionTicketStatusFn: deps.transitionTicketStatusFn ?? transitionTicketStatus,
+    updateTicketStatusFn: deps.updateTicketStatusFn ?? updateTicketStatus,
+    claimPhaseForProcessingFn: deps.claimPhaseForProcessingFn ?? claimPhaseForProcessing,
+    completePhaseSuccessFn: deps.completePhaseSuccessFn ?? completePhaseSuccess,
+    failPhaseAttemptFn: deps.failPhaseAttemptFn ?? failPhaseAttempt,
+    changeMessageVisibilityFn: deps.changeMessageVisibilityFn ?? changeMessageVisibility,
+    deleteMessageFn: deps.deleteMessageFn ?? deleteTicketMessage,
+    processPhaseFn: deps.processPhaseFn ?? runPhase,
+  };
+}
 
 function isTerminalStatus(status: TicketStatus): boolean {
   return status === 'completed' || status === 'failed';
@@ -49,38 +74,97 @@ function backoffSeconds(attempts: number): number {
   return Math.ceil((Math.pow(2, attempts) * 1000 + Math.random() * 500) / 1000);
 }
 
+async function handlePhaseError(
+  phaseError: unknown,
+  ticketId: string,
+  phase: PhaseName,
+  receiptHandle: string,
+  deps: ResolvedDeps,
+): Promise<void> {
+  if (phaseError instanceof FatalPhaseError) {
+    logger.error({ err: phaseError, ticketId, phase }, 'Fatal phase error — skipping retry');
+    await deps.failPhaseAttemptFn(ticketId, phase);
+    await deps.transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
+    await deps.changeMessageVisibilityFn(receiptHandle, 0);
+    return;
+  }
+
+  logger.error({ err: phaseError, ticketId, phase }, 'Phase processing failed');
+  const failedPhase = await deps.failPhaseAttemptFn(ticketId, phase);
+
+  if (!failedPhase) {
+    await deps.updateTicketStatusFn(ticketId, 'failed');
+    await deps.changeMessageVisibilityFn(receiptHandle, 0);
+    return;
+  }
+
+  if (failedPhase.attempts >= 3) {
+    await deps.transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
+    await deps.changeMessageVisibilityFn(receiptHandle, 0);
+  } else {
+    await deps.transitionTicketStatusFn(ticketId, ['processing'], 'queued');
+    await deps.changeMessageVisibilityFn(receiptHandle, backoffSeconds(failedPhase.attempts));
+  }
+}
+
+async function orchestratePhases(
+  ticketId: string,
+  receiptHandle: string,
+  deps: ResolvedDeps,
+): Promise<void> {
+  while (true) {
+    const phases = await deps.getTicketPhasesByTicketIdFn(ticketId);
+    const nextPhase = findNextPhase(phases);
+
+    if (!nextPhase) {
+      await deps.transitionTicketStatusFn(ticketId, ['processing'], 'completed');
+      await deps.deleteMessageFn(receiptHandle);
+      logger.info({ ticketId }, 'Ticket completed — all phases done');
+      return;
+    }
+
+    const phaseClaim = await deps.claimPhaseForProcessingFn(ticketId, nextPhase);
+    if (!phaseClaim) {
+      logger.warn({ ticketId, phase: nextPhase }, 'Phase not claimable for processing');
+      return;
+    }
+
+    logger.info({ ticketId, phase: nextPhase, attempt: phaseClaim.attempts }, 'Phase started');
+
+    try {
+      const output = await deps.processPhaseFn(ticketId, nextPhase);
+      await deps.completePhaseSuccessFn(ticketId, nextPhase, output);
+      logger.info({ ticketId, phase: nextPhase }, 'Phase completed');
+    } catch (phaseError) {
+      await handlePhaseError(phaseError, ticketId, nextPhase, receiptHandle, deps);
+      return;
+    }
+  }
+}
+
 export async function processTicketLifecycle(
   ticketId: string,
   receiptHandle: string,
   deps: WorkerDeps = {},
 ): Promise<void> {
-  const getTicketByIdFn = deps.getTicketByIdFn ?? getTicketById;
-  const getTicketPhasesByTicketIdFn = deps.getTicketPhasesByTicketIdFn ?? getTicketPhasesByTicketId;
-  const transitionTicketStatusFn = deps.transitionTicketStatusFn ?? transitionTicketStatus;
-  const updateTicketStatusFn = deps.updateTicketStatusFn ?? updateTicketStatus;
-  const claimPhaseForProcessingFn = deps.claimPhaseForProcessingFn ?? claimPhaseForProcessing;
-  const completePhaseSuccessFn = deps.completePhaseSuccessFn ?? completePhaseSuccess;
-  const failPhaseAttemptFn = deps.failPhaseAttemptFn ?? failPhaseAttempt;
-  const processPhaseFn = deps.processPhaseFn ?? runPhase;
-  const changeMessageVisibilityFn = deps.changeMessageVisibilityFn ?? changeMessageVisibility;
-  const deleteMessageFn = deps.deleteMessageFn ?? deleteTicketMessage;
+  const resolved = resolveDeps(deps);
 
-  const existing = await getTicketByIdFn(ticketId);
+  const existing = await resolved.getTicketByIdFn(ticketId);
   if (!existing) {
     logger.warn({ ticketId }, 'Skipping unknown ticket from queue');
-    await deleteMessageFn(receiptHandle);
+    await resolved.deleteMessageFn(receiptHandle);
     return;
   }
 
   if (isTerminalStatus(existing.status)) {
     logger.info({ ticketId, status: existing.status }, 'Skipping terminal ticket');
-    await deleteMessageFn(receiptHandle);
+    await resolved.deleteMessageFn(receiptHandle);
     return;
   }
 
-  const claimed = await transitionTicketStatusFn(ticketId, ['queued'], 'processing');
+  const claimed = await resolved.transitionTicketStatusFn(ticketId, ['queued'], 'processing');
   if (!claimed) {
-    const current = await getTicketByIdFn(ticketId);
+    const current = await resolved.getTicketByIdFn(ticketId);
     if (current && !isTerminalStatus(current.status)) {
       logger.warn({ ticketId, status: current.status }, 'Ticket not claimable for processing');
     }
@@ -90,65 +174,14 @@ export async function processTicketLifecycle(
   logger.info({ ticketId }, 'Ticket claimed — processing started');
 
   try {
-    while (true) {
-      const phases = await getTicketPhasesByTicketIdFn(ticketId);
-      const nextPhase = findNextPhase(phases);
-
-      if (!nextPhase) {
-        await transitionTicketStatusFn(ticketId, ['processing'], 'completed');
-        await deleteMessageFn(receiptHandle);
-        logger.info({ ticketId }, 'Ticket completed — all phases done');
-        return;
-      }
-
-      const phaseClaim = await claimPhaseForProcessingFn(ticketId, nextPhase);
-      if (!phaseClaim) {
-        logger.warn({ ticketId, phase: nextPhase }, 'Phase not claimable for processing');
-        return;
-      }
-
-      logger.info({ ticketId, phase: nextPhase, attempt: phaseClaim.attempts }, 'Phase started');
-
-      try {
-        const output = await processPhaseFn(ticketId, nextPhase);
-        await completePhaseSuccessFn(ticketId, nextPhase, output);
-        logger.info({ ticketId, phase: nextPhase }, 'Phase completed');
-      } catch (phaseError) {
-        if (phaseError instanceof FatalPhaseError) {
-          logger.error({ err: phaseError, ticketId, phase: nextPhase }, 'Fatal phase error — skipping retry');
-          await failPhaseAttemptFn(ticketId, nextPhase);
-          await transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
-          await changeMessageVisibilityFn(receiptHandle, 0);
-          return;
-        }
-
-        logger.error({ err: phaseError, ticketId, phase: nextPhase }, 'Phase processing failed');
-        const failedPhase = await failPhaseAttemptFn(ticketId, nextPhase);
-
-        if (!failedPhase) {
-          await updateTicketStatusFn(ticketId, 'failed');
-          await changeMessageVisibilityFn(receiptHandle, 0);
-          return;
-        }
-
-        if (failedPhase.attempts >= 3) {
-          await transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
-          await changeMessageVisibilityFn(receiptHandle, 0);
-        } else {
-          await transitionTicketStatusFn(ticketId, ['processing'], 'queued');
-          await changeMessageVisibilityFn(receiptHandle, backoffSeconds(failedPhase.attempts));
-        }
-
-        return;
-      }
-    }
+    await orchestratePhases(ticketId, receiptHandle, resolved);
   } catch (error) {
     logger.error({ err: error, ticketId }, 'Ticket processing failed');
-    const failed = await transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
+    const failed = await resolved.transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
     if (!failed) {
-      await updateTicketStatusFn(ticketId, 'failed');
+      await resolved.updateTicketStatusFn(ticketId, 'failed');
     }
-    await changeMessageVisibilityFn(receiptHandle, 0);
+    await resolved.changeMessageVisibilityFn(receiptHandle, 0);
   }
 }
 
