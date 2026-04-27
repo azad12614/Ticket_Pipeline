@@ -1,5 +1,5 @@
 import logger from '../lib/logger.ts';
-import { dequeueTicket } from '../queues/ticketQueue.ts';
+import { receiveTickets, deleteTicketMessage, changeMessageVisibility } from '../queues/ticketQueue.ts';
 import {
   claimPhaseForProcessing,
   completePhaseSuccess,
@@ -24,6 +24,8 @@ type WorkerDeps = {
   completePhaseSuccessFn?: typeof completePhaseSuccess;
   failPhaseAttemptFn?: typeof failPhaseAttempt;
   processPhaseFn?: (ticketId: string, phase: PhaseName) => Promise<unknown>;
+  changeMessageVisibilityFn?: (receiptHandle: string, delaySeconds: number) => Promise<void>;
+  deleteMessageFn?: (receiptHandle: string) => Promise<void>;
 };
 
 function isTerminalStatus(status: TicketStatus): boolean {
@@ -45,8 +47,13 @@ function findNextPhase(phases: TicketPhase[]): PhaseName | null {
   return null;
 }
 
+function backoffSeconds(attempts: number): number {
+  return Math.ceil((Math.pow(2, attempts) * 1000 + Math.random() * 500) / 1000);
+}
+
 export async function processTicketLifecycle(
   ticketId: string,
+  receiptHandle: string,
   deps: WorkerDeps = {},
 ): Promise<void> {
   const getTicketByIdFn = deps.getTicketByIdFn ?? getTicketById;
@@ -57,15 +64,19 @@ export async function processTicketLifecycle(
   const completePhaseSuccessFn = deps.completePhaseSuccessFn ?? completePhaseSuccess;
   const failPhaseAttemptFn = deps.failPhaseAttemptFn ?? failPhaseAttempt;
   const processPhaseFn = deps.processPhaseFn ?? defaultProcessFn;
+  const changeMessageVisibilityFn = deps.changeMessageVisibilityFn ?? changeMessageVisibility;
+  const deleteMessageFn = deps.deleteMessageFn ?? deleteTicketMessage;
 
   const existing = await getTicketByIdFn(ticketId);
   if (!existing) {
     logger.warn({ ticketId }, 'Skipping unknown ticket from queue');
+    await deleteMessageFn(receiptHandle);
     return;
   }
 
   if (isTerminalStatus(existing.status)) {
     logger.info({ ticketId, status: existing.status }, 'Skipping terminal ticket');
+    await deleteMessageFn(receiptHandle);
     return;
   }
 
@@ -85,6 +96,7 @@ export async function processTicketLifecycle(
 
       if (!nextPhase) {
         await transitionTicketStatusFn(ticketId, ['processing'], 'completed');
+        await deleteMessageFn(receiptHandle);
         return;
       }
 
@@ -103,13 +115,16 @@ export async function processTicketLifecycle(
 
         if (!failedPhase) {
           await updateTicketStatusFn(ticketId, 'failed');
+          await changeMessageVisibilityFn(receiptHandle, 0);
           return;
         }
 
         if (failedPhase.attempts >= 3) {
           await transitionTicketStatusFn(ticketId, ['queued', 'processing'], 'failed');
+          await changeMessageVisibilityFn(receiptHandle, 0);
         } else {
           await transitionTicketStatusFn(ticketId, ['processing'], 'queued');
+          await changeMessageVisibilityFn(receiptHandle, backoffSeconds(failedPhase.attempts));
         }
 
         return;
@@ -121,6 +136,7 @@ export async function processTicketLifecycle(
     if (!failed) {
       await updateTicketStatusFn(ticketId, 'failed');
     }
+    await changeMessageVisibilityFn(receiptHandle, 0);
   }
 }
 
@@ -135,12 +151,12 @@ export function startTicketWorker(deps: WorkerDeps = {}): WorkerHandle {
   const done = (async () => {
     while (!controller.signal.aborted) {
       try {
-        const ticketId = await dequeueTicket(controller.signal);
-        await processTicketLifecycle(ticketId, deps);
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          break;
+        const messages = await receiveTickets(controller.signal);
+        for (const { ticketId, receiptHandle } of messages) {
+          await processTicketLifecycle(ticketId, receiptHandle, deps);
         }
+      } catch (error) {
+        if (controller.signal.aborted) break;
         logger.error({ err: error }, 'Worker loop error');
       }
     }

@@ -80,8 +80,8 @@ Three-table normalized design. See migration files for full SQL.
 - `ticket_events` is insert-only — no UPDATE or DELETE permitted
 - `ticket_events.ticket_id` uses `ON DELETE RESTRICT` — a ticket cannot be deleted while audit records exist
 - `ticket_phases.ticket_id` uses `ON DELETE CASCADE` — phase rows are operational state, not audit records
-- Phase rows created on worker pickup (not at submission) — no row means phase not yet reached
-- `attempts` incremented on pickup before execution — a worker crash counts as a consumed attempt
+- Phase rows created at submission time in same transaction as ticket insert — stable API shape from the moment ticket exists
+- `attempts` incremented atomically on phase claim (before execution) — a worker crash counts as a consumed attempt
 - `archived_at IS NULL` filter excludes soft-archived tickets from default list queries
 - Soft-archive: a daily `node-cron` job sets `archived_at = NOW()` on tickets where `created_at < NOW() - INTERVAL '90 days'` and `archived_at IS NULL`
 
@@ -105,7 +105,6 @@ src/
 │   ├── producer.ts
 │   └── consumer.ts
 ├── adapters/        # AI adapter (Portkey)
-│   ├── AIProviderAdapter.ts   # Interface definition
 │   ├── phase1Adapter.ts
 │   └── phase2Adapter.ts
 ├── sockets/         # Socket.io setup & event emitters
@@ -130,13 +129,15 @@ src/
 
 ### 3.3 Queue Architecture
 
-Worker long-polls the main queue (20s wait, one message at a time). On pickup: reads `ticket_phases` from Postgres fresh, determines which phase to run, executes it. On phase success: re-enqueues for the next phase. On phase failure (attempt < 3): re-enqueues with backoff delay. On phase failure (attempt = 3): routes message to DLQ.
+Worker long-polls the main queue (20s wait, one message at a time). On pickup: reads `ticket_phases` from Postgres fresh, determines which phase to run, executes it. On phase success: deletes SQS message, loops back to poll. On phase failure (retryable, attempt < 3): calls `ChangeMessageVisibility` with exponential backoff delay — message stays in queue, SQS re-delivers automatically. On fatal failure (Zod validation): deletes SQS message manually, marks phase and ticket failed immediately — no retry. On attempt exhaustion (3 deliveries): SQS native `RedrivePolicy` moves message to DLQ automatically.
+
+**Retry flow — no manual re-enqueue.** Worker never sends a new SQS message on failure. It only adjusts visibility timeout on the existing message. This ensures message is never lost between a delete and a re-send.
 
 DLQ consumer is a **separate process**. It reads from the DLQ, sets `ticket.status = 'failed'`, writes a `dlq_routed` event to `ticket_events`, and emits `ticket.failed` via Socket.io.
 
 LocalStack provisioned via `uv` + `venv`. Main queue linked to DLQ via `RedrivePolicy` with `maxReceiveCount: 3`. See README for setup commands.
 
-**SQS visibility timeout:** 300 seconds. Worker extends the timeout before expiry if an AI call is still in progress.
+**SQS visibility timeout:** 300 seconds initial. Worker extends via `ChangeMessageVisibility` every 4 minutes during long AI calls to prevent re-delivery while processing. `receiptHandle` is passed as direct parameter into the phase orchestrator for this purpose.
 
 ---
 
@@ -146,7 +147,7 @@ Portkey handles provider routing. The worker calls one unified Portkey endpoint 
 
 Portkey configured with `strategy.mode = "fallback"` targeting Anthropic → OpenAI → Google in order. All provider API keys stored in env vars, never hardcoded.
 
-`AIProviderAdapter` interface exposes two methods: `triageTicket(ticket)` and `draftResolution(ticket, triage)`. Adapters call Portkey — never AI providers directly.
+Two plain exported functions — no shared interface: `triageTicket(ticket)` in `phase1Adapter.ts`, `draftResolution(ticket, triage)` in `phase2Adapter.ts`. Both call Portkey — never AI providers directly. No interface: nothing is polymorphic, Portkey handles provider switching transparently.
 
 Every Portkey request includes metadata: `{ ticketId, phase, attempt }` for Portkey's observability dashboard and cross-system tracing via `x-portkey-trace-id`.
 
@@ -200,14 +201,17 @@ Exact prompt text lives in code (`phase1Adapter.ts`, `phase2Adapter.ts`). These 
 
 ### 3.7 Retry Strategy
 
-Attempt 1: immediate. Attempt 2: ~2s delay (`2^1 * 1000 + jitter`). Attempt 3: ~4s delay (`2^2 * 1000 + jitter`). Attempt 4: route to DLQ (`maxReceiveCount: 3` exhausted). Jitter is `random(0, 500)ms`.
+Attempt 1: immediate. Attempt 2: ~2s delay (`2^1 * 1000 + jitter`). Attempt 3: ~4s delay (`2^2 * 1000 + jitter`). Attempt 4: SQS `RedrivePolicy` exhausted (`maxReceiveCount: 3`) → message auto-moved to DLQ. Jitter is `random(0, 500)ms`.
+
+Backoff implemented via `ChangeMessageVisibility(receiptHandle, delaySeconds)` on the existing message — not via re-enqueue. Delay converts ms to seconds for the SQS call.
 
 **Retry rules:**
 
 - Retryable: network error, timeout (30s), rate limit (429), provider unavailable (5xx)
-- Fatal (no retry): Zod validation failure, invalid ticket state
-- SQS message is deleted from the queue only after successful phase completion
-- Phase attempt count is incremented atomically in Postgres before re-enqueueing
+- Fatal (no retry): Zod validation failure, invalid ticket state — message deleted manually, phase marked failed immediately
+- SQS message deleted only on: successful phase completion OR fatal (Zod) failure
+- On retryable failure: message stays in queue, visibility set to backoff delay, SQS re-delivers
+- Phase `attempts` incremented atomically in Postgres on claim (before execution) — crash counts as consumed attempt
 - A completed phase is never re-executed, even if the message is re-delivered
 
 ---
@@ -259,7 +263,7 @@ ticket:{ticketId}   → client that submitted the ticket (individual updates)
 **POST /tickets/:id/replay** — Re-enqueue a failed ticket
 
 - Only accepts tickets with `status = failed` — returns 409 otherwise
-- Resets `ticket.status` to `queued` and failed phase to `started`; completed phases untouched
+- Resets `ticket.status` to `queued`, failed phase `status` to `started`, and failed phase `attempts` to `0`; completed phases untouched
 - Response 200: `{ ticketId, status: "queued" }`
 
 **Error shape (all endpoints):** `{ "error": "CODE", "message": "...", "code": 4xx }`
@@ -518,9 +522,11 @@ Implement the SQS long-polling consumer that reads Postgres phase checkpoints an
 
 - [ ] Worker never re-runs a `completed` phase
 - [ ] `ticket_events` row written for every state transition (started, completed, failed, retry, dlq)
-- [ ] `ticket_phases.attempts` incremented atomically in Postgres before re-enqueue
-- [ ] SQS message deleted from queue only after successful phase completion
-- [ ] DLQ message includes `ticketId` and `failedPhase`
+- [ ] `ticket_phases.attempts` incremented atomically in Postgres on phase claim (before execution)
+- [ ] SQS message deleted only on success or fatal (Zod) failure — never on retryable failure
+- [ ] Retryable failure uses `ChangeMessageVisibility` with backoff delay — no new message enqueued
+- [ ] DLQ routing via native `RedrivePolicy` after `maxReceiveCount: 3` deliveries
+- [ ] DLQ consumer reads DLQ message — includes `ticketId` and `failedPhase`
 - [ ] Visibility timeout extended before it expires on long AI calls
 - [ ] Worker loop continues after individual job failures
 - [ ] Phase 1 success immediately re-enqueues `{ ticketId }` for Phase 2
@@ -708,7 +714,7 @@ Implement structured observability across all pipeline stages. Every phase execu
 - [ ] DLQ consumer (separate process) reads DLQ, sets `ticket.status = failed`, writes `dlq_routed` event
 - [ ] `GET /tickets/:id` returns last 20 events in chronological order
 - [ ] `POST /tickets/:id/replay` only accepts `status = failed` tickets — returns 409 otherwise
-- [ ] Replay resets `ticket.status` to `queued` and failed phase to `pending`
+- [ ] Replay resets `ticket.status` to `queued`, failed phase `status` to `started`, and failed phase `attempts` to `0`
 - [ ] Replay does not reset completed phases — checkpointing preserved
 - [ ] `x-portkey-trace-id` included in every AI-related log event
 

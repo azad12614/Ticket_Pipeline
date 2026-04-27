@@ -159,13 +159,6 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 - [x] Status field updates verified at each pipeline stage
 - [x] Failed tickets remain in the database with their failure state recorded
 
-##### Checklist
-
-- [x] Database table set up for tickets with status tracking
-- [x] Unique ID generation confirmed working
-- [x] Status lifecycle defined: queued → processing → completed / failed
-- [x] No ticket deleted or overwritten at any stage
-
 ---
 
 #### US-1.2 — Per-Phase Tracking
@@ -190,15 +183,6 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 - [x] Phase output retrievable from the ticket status endpoint when complete
 - [x] Phase rows exist up front so the status endpoint always has a stable shape
 
-##### Checklist
-
-- [x] Database table for per-phase tracking created
-- [x] Phase status lifecycle: started → progress → success / failure
-- [x] Attempt counter increments atomically on each failure
-- [x] Phase output stored as structured data linked to ticket
-- [x] Phase rows created at submission time for both triage and draft
-- [x] Completed phase skip logic enforced on worker pickup and DB claim
-
 ---
 
 #### US-1.3 — Audit Trail
@@ -221,13 +205,6 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 - [ ] Full history visible via API for a test ticket
 - [ ] Events returned in correct chronological order
 
-##### Checklist
-
-- [ ] Audit event table created (insert-only, no updates)
-- [ ] Event written for every phase start, completion, failure, retry, and final outcome
-- [ ] Audit records linked to the originating ticket
-- [ ] Chronological ordering confirmed in API response
-
 ---
 
 #### US-1.4 — Data Retention & Soft-Archive
@@ -249,13 +226,6 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 - [ ] Default list query confirmed to exclude archived tickets
 - [ ] Archived tickets retrievable with explicit filter
 - [ ] No data loss confirmed — archived ticket data fully intact
-
-##### Checklist
-
-- [ ] Automated daily job implemented to archive tickets older than 90 days
-- [x] Archive flag added to ticket record (not deletion)
-- [ ] Default list endpoint excludes archived tickets
-- [ ] Archive filter available on list endpoint (`?archived=true`)
 
 ---
 
@@ -304,13 +274,6 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 - [x] Submission confirmed not to block while AI runs
 - [x] Missing required fields return a helpful error message (not a crash)
 
-##### Checklist
-
-- [x] Ticket submission endpoint responds with 202 status (accepted, not yet complete)
-- [x] Ticket saved to database before any background processing begins
-- [x] Required fields validated: subject and ticket body
-- [x] Invalid submissions return a clear, structured error message
-
 ---
 
 #### US-2.2 — Ticket Status Check
@@ -335,13 +298,6 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 - [ ] Full history returned in correct chronological order
 - [x] 404 response confirmed for unknown ticket IDs
 
-##### Checklist
-
-- [x] Status endpoint implemented and returns: ticket status, phase statuses, phase outputs, event history
-- [x] Phase output only shown when phase is fully complete
-- [x] Event history deferred to US-1.3 (non-MVP) — not included in MVP scope
-- [x] Invalid ticket ID returns clear not-found response
-
 ---
 
 #### US-2.3 — Ticket List & Filtering
@@ -364,14 +320,6 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 - [ ] Archived filter (`?archived=true`) confirmed to include archived tickets
 - [ ] Pagination confirmed: `page` and `limit` parameters work correctly
 
-##### Checklist
-
-- [ ] List endpoint supports `?status=`, `?archived=` filters
-- [ ] Offset-based pagination implemented: `?page=1&limit=20`
-- [ ] Maximum page size capped at 100
-- [ ] Total count returned in response alongside results
-- [ ] Archived tickets excluded from default results
-
 ---
 
 #### US-2.4 — Manual Retry
@@ -393,14 +341,6 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 - [ ] Retry confirmed rejected for tickets not in failed state
 - [ ] Ticket status updates to queued after successful retry request
 - [ ] Retry tested on a ticket with Phase 1 complete and Phase 2 failed — only Phase 2 retried
-
-##### Checklist
-
-- [ ] Replay endpoint implemented and accepts only failed tickets
-- [ ] Replay resets ticket status to queued
-- [ ] Replay resets only the failed phase to pending — completed phases left intact
-- [ ] Replay resets the replayed phase attempt count to 0
-- [ ] Clear error response returned when ticket is not in failed state (409 Conflict)
 
 ---
 
@@ -437,21 +377,15 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 ##### Acceptance Criteria
 
-- [ ] Ticket submission returns immediately — AI processing happens in the background
-- [ ] Background processing begins automatically after submission — no manual trigger
-- [ ] Multiple tickets can be processed without interfering with each other
+- [x] Ticket submission returns immediately — AI processing happens in the background
+- [x] Background processing begins automatically after submission — no manual trigger
+- [x] Multiple tickets can be processed without interfering with each other
 
 ##### Definition of Done
 
-- [ ] Submission response confirmed before background processing begins
-- [ ] Background worker confirmed picking up and processing tickets automatically
-- [ ] Worker confirmed stable processing tickets one at a time without interference
-
-##### Checklist
-
-- [ ] Work queue implemented to hold tickets waiting to be processed
-- [ ] Background worker implemented to continuously poll the queue
-- [ ] Worker processes one ticket at a time reliably
+- [x] Submission response confirmed before background processing begins
+- [x] Background worker confirmed picking up and processing tickets automatically
+- [x] Worker confirmed stable processing tickets one at a time without interference
 
 ---
 
@@ -463,21 +397,15 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 ##### Acceptance Criteria
 
-- [ ] Phase 2 starts automatically and immediately when Phase 1 completes successfully
-- [ ] Phase 2 never starts if Phase 1 has not completed
-- [ ] The handoff between phases requires no manual action
+- [x] Phase 2 starts automatically and immediately when Phase 1 completes successfully
+- [x] Phase 2 never starts if Phase 1 has not completed
+- [x] The handoff between phases requires no manual action
 
 ##### Definition of Done
 
-- [ ] Phase 2 confirmed to start automatically after Phase 1 success
-- [ ] Phase 2 confirmed blocked when Phase 1 has not completed
-- [ ] Zero manual steps required between phases
-
-##### Checklist
-
-- [ ] Phase 1 completion triggers automatic Phase 2 enqueue
-- [ ] Phase 2 worker checks Phase 1 completion before running
-- [ ] Handoff tested end-to-end with a real ticket
+- [x] Phase 2 confirmed to start automatically after Phase 1 success
+- [x] Phase 2 confirmed blocked when Phase 1 has not completed
+- [x] Zero manual steps required between phases
 
 ---
 
@@ -489,24 +417,17 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 ##### Acceptance Criteria
 
-- [ ] Failed phases are retried automatically — no manual trigger required
-- [ ] Retries use increasing wait times to avoid overloading the AI provider
-- [ ] Retry attempts are recorded and visible on the ticket
-- [ ] After 3 failed attempts, the ticket is moved to a needs-attention state
+- [x] Failed phases are retried automatically — no manual trigger required
+- [x] Retries use increasing wait times to avoid overloading the AI provider
+- [x] Retry attempts are recorded and visible on the ticket
+- [x] After 3 failed attempts, the ticket is moved to a needs-attention state
 
 ##### Definition of Done
 
-- [ ] Automatic retry confirmed without manual intervention
-- [ ] Retry wait times confirmed: ~2 seconds, then ~4 seconds, then give up
-- [ ] Attempt count visible on ticket status endpoint after retries
-- [ ] After 3 failures, ticket status confirmed set to failed
-
-##### Checklist
-
-- [ ] Retry logic implemented with exponential backoff (attempt 1: immediate, 2: ~2s, 3: ~4s)
-- [ ] Slight randomization added to retry timing to prevent retry surges
-- [ ] Attempt count incremented on each failure
-- [ ] After 3 failures, ticket status set to `failed` (needs-attention queue deferred to US-6.2)
+- [x] Automatic retry confirmed without manual intervention
+- [x] Retry wait times confirmed: ~2 seconds, then ~4 seconds, then give up
+- [x] Attempt count visible on ticket status endpoint after retries
+- [x] After 3 failures, ticket status confirmed set to failed
 
 ---
 
@@ -518,21 +439,15 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 ##### Acceptance Criteria
 
-- [ ] A phase already marked as completed is never re-run
-- [ ] This holds true even after system restarts or re-delivery of a queue message
-- [ ] Only the failed or pending phase is executed on re-processing
+- [x] A phase already marked as completed is never re-run
+- [x] This holds true even after system restarts or re-delivery of a queue message
+- [x] Only the failed or pending phase is executed on re-processing
 
 ##### Definition of Done
 
-- [ ] Completed phase confirmed never re-executed after system restart
-- [ ] Checkpoint read fresh from database on every job pickup — no reliance on memory
-- [ ] Duplicate prevention confirmed by unit test
-
-##### Checklist
-
-- [ ] Worker reads phase status from database on every pickup (not from memory)
-- [ ] Completed phase skip logic implemented and tested
-- [ ] Idempotency enforced at the database level
+- [x] Completed phase confirmed never re-executed after system restart
+- [x] Checkpoint read fresh from database on every job pickup — no reliance on memory
+- [x] Duplicate prevention confirmed by unit test
 
 ---
 
@@ -554,23 +469,16 @@ This is the heart of the system. It must be reliable above all else — no ticke
 - [ ] No ticket lost or corrupted during shutdown
 - [ ] Worker stops polling for new jobs immediately after shutdown signal
 
-##### Checklist
-
-- [ ] SIGTERM signal handler implemented on worker process
-- [ ] Worker completes current job before stopping
-- [ ] Worker stops polling for new messages after SIGTERM received
-
 ---
 
 ### Kanban
 
-| Backlog                     | In Progress | Review | Done |
-| --------------------------- | ----------- | ------ | ---- |
-| US-3.1: Async processing    | —           | —      | —    |
-| US-3.2: Phase handoff       | —           | —      | —    |
-| US-3.3: Automatic retry     | —           | —      | —    |
-| US-3.4: No work duplication | —           | —      | —    |
-| US-3.5: Graceful shutdown   | —           | —      | —    |
+| Backlog                   | In Progress | Review | Done                        |
+| ------------------------- | ----------- | ------ | --------------------------- |
+| US-3.5: Graceful shutdown | —           | —      | US-3.1: Async processing    |
+| —                         | —           | —      | US-3.2: Phase handoff       |
+| —                         | —           | —      | US-3.3: Automatic retry     |
+| —                         | —           | —      | US-3.4: No work duplication |
 
 ---
 
@@ -620,13 +528,6 @@ This switching happens automatically. Agents never know which provider was used 
 - [ ] Analysis stored in the database and retrievable via API
 - [ ] Processing time confirmed under 30 seconds in testing
 
-##### Checklist
-
-- [ ] AI triage prompt designed and tested on sample tickets
-- [ ] All 6 output fields defined with allowed values
-- [ ] Output validated before being stored — malformed responses rejected
-- [ ] Triage output linked to originating ticket in the database
-
 ---
 
 #### US-4.2 — AI Resolution Draft (Phase 2)
@@ -648,13 +549,6 @@ This switching happens automatically. Agents never know which provider was used 
 - [ ] Customer reply confirmed to address the specific issue (not generic)
 - [ ] Internal note confirmed to reference the triage category and priority
 - [ ] Phase 2 confirmed blocked when Phase 1 is not complete
-
-##### Checklist
-
-- [ ] AI resolution prompt designed using Phase 1 output as structured context
-- [ ] All 3 output fields defined with minimum quality requirements
-- [ ] Output validated before being stored — malformed responses rejected
-- [ ] Phase 1 completion required before Phase 2 can begin
 
 ---
 
@@ -678,13 +572,6 @@ This switching happens automatically. Agents never know which provider was used 
 - [ ] Invalid output confirmed never written to the database
 - [ ] Manual review flag confirmed set after validation failures exhaust retries
 
-##### Checklist
-
-- [ ] Output validation implemented for both Phase 1 and Phase 2
-- [ ] Validation failure triggers phase failure flow
-- [ ] Partial or malformed data never written to the database
-- [ ] Tickets with persistently invalid output set to `failed` status (manual review workflow deferred to US-6.2)
-
 ---
 
 #### US-4.4 — AI Provider Fallback
@@ -706,13 +593,6 @@ This switching happens automatically. Agents never know which provider was used 
 - [ ] Provider switch logged for monitoring and cost tracking
 - [ ] Agents confirmed to receive identical output structure from all providers
 - [ ] System confirmed to continue processing during primary provider outage
-
-##### Checklist
-
-- [ ] Three AI providers configured with automatic fallback order
-- [ ] Fallback switching is transparent to agents
-- [ ] Provider switch recorded in the audit log
-- [ ] All provider credentials stored securely — not in code
 
 ---
 
@@ -765,13 +645,6 @@ Without live updates, agents and ops teams are flying blind. They would have to 
 - [ ] Retry update confirmed to include the attempt number and wait time
 - [ ] System confirmed stable when no clients are connected
 
-##### Checklist
-
-- [ ] Real-time notification server implemented
-- [ ] All 7 event types wired to the correct pipeline stages
-- [ ] Final completion event includes full Phase 1 and Phase 2 output
-- [ ] System does not crash when no clients are subscribed
-
 ---
 
 #### US-5.2 — Per-Ticket Subscription
@@ -792,12 +665,6 @@ Without live updates, agents and ops teams are flying blind. They would have to 
 - [ ] Subscription confirmed to deliver all events from queued through completed
 - [ ] Isolation confirmed with two simultaneous clients in testing
 
-##### Checklist
-
-- [ ] Per-ticket subscription channels implemented
-- [ ] Client subscribes using the ticket ID received at submission
-- [ ] Cross-ticket data leakage confirmed absent
-
 ---
 
 #### US-5.3 — Ops Dashboard Visibility
@@ -817,12 +684,6 @@ Without live updates, agents and ops teams are flying blind. They would have to 
 - [ ] Ops dashboard confirmed to receive summary events for all team tickets
 - [ ] Full AI output confirmed absent from ops channel
 - [ ] Ops visibility confirmed for completed, in-progress, and failed states
-
-##### Checklist
-
-- [ ] Per-tenant ops subscription channel implemented
-- [ ] Ops channel sends lightweight summary (ticket ID and status only — no AI output)
-- [ ] Ops channel receives events for all tickets in the tenant
 
 ---
 
@@ -872,13 +733,6 @@ Production systems fail. AI providers have outages. Networks hiccup. The questio
 - [ ] Audit records confirmed insert-only — no update or delete operations permitted
 - [ ] All events visible via API in chronological order
 
-##### Checklist
-
-- [ ] Audit event written for every pipeline state transition
-- [ ] Audit records are immutable — insert-only design enforced
-- [ ] All 8 event types covered: phase started, completed, failed, retry scheduled, fallback triggered, DLQ routed, ticket completed, ticket failed
-- [ ] Events visible via ticket status endpoint (last 20, chronological)
-
 ---
 
 #### US-6.2 — Needs-Attention Queue
@@ -901,13 +755,6 @@ Production systems fail. AI providers have outages. Networks hiccup. The questio
 - [ ] Ticket confirmed to remain in database in failed state — not deleted
 - [ ] Ops confirmed able to identify failed tickets without accessing raw logs
 
-##### Checklist
-
-- [ ] Ticket status set to failed after 3 exhausted retries
-- [ ] Failed phase and attempt count recorded on ticket
-- [ ] Failed tickets filterable via list endpoint
-- [ ] No failed ticket silently discarded
-
 ---
 
 #### US-6.3 — Phase 1 Preservation on Phase 2 Failure
@@ -927,12 +774,6 @@ Production systems fail. AI providers have outages. Networks hiccup. The questio
 - [ ] Phase 1 output confirmed accessible via API after Phase 2 permanent failure
 - [ ] Phase 1 confirmed not re-executed after Phase 2 failure
 - [ ] Ticket status reflects partial completion (Phase 1 done, Phase 2 failed)
-
-##### Checklist
-
-- [ ] Phase tracking is independent — Phase 2 failure does not affect Phase 1 record
-- [ ] Phase 1 output visible in ticket status even when Phase 2 has failed
-- [ ] Ticket status accurately reflects which phases are complete and which have failed
 
 ---
 
@@ -955,13 +796,6 @@ Production systems fail. AI providers have outages. Networks hiccup. The questio
 - [ ] Zero PII confirmed in any log output — body and email fields absent
 - [ ] Log levels verified: retries use warn, failures use error, success uses info
 - [ ] Logs readable without additional tooling in development
-
-##### Checklist
-
-- [ ] Structured logging implemented for all 8 pipeline event types
-- [ ] PII sanitizer implemented — strips customer email and ticket body from all log output
-- [ ] Log levels assigned correctly per event type
-- [ ] Human-readable log output available in development environment
 
 ---
 
