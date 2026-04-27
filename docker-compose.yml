@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    container_name: tickets-db
+    environment:
+      POSTGRES_USER: ticketuser
+      POSTGRES_PASSWORD: ticketpass
+      POSTGRES_DB: tickets
+    ports:
+      - "5432:5432"
+    volumes:
+      - tickets-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketuser -d tickets"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack
+    container_name: tickets-localstack
+    environment:
+      - SERVICES=sqs
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN}
+    ports:
+      - "4566:4566"
+    volumes:
+      - tickets-localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs list-queues"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  tickets-db-data:
+  tickets-localstack-data:
