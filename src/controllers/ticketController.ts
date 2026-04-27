@@ -4,8 +4,24 @@ import type { TicketInput, Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketWithPhases } from '../repositories/ticketRepo.ts';
 
 export interface TicketControllerDeps {
+  listTickets: () => Promise<Pick<Ticket, 'id' | 'status' | 'created_at'>[]>;
   submitTicket: (input: TicketInput) => Promise<Ticket>;
   getTicket: (id: string) => Promise<TicketWithPhases>;
+}
+
+export function makeListTicketsHandler(deps: TicketControllerDeps) {
+  return async function listTicketsHandler(
+    _req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const tickets = await deps.listTickets();
+      res.status(200).json({ tickets });
+    } catch (err) {
+      next(err);
+    }
+  };
 }
 
 export function makeSubmitTicketHandler(deps: TicketControllerDeps) {

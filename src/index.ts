@@ -4,11 +4,11 @@ import { config } from './lib/config.ts';
 import { createApp } from './app.ts';
 import { createIo } from './lib/io.ts';
 import { startNotifyService } from './services/notifyService.ts';
-import { submitTicket, getTicket } from './services/ticketService.ts';
+import { listTickets, submitTicket, getTicket } from './services/ticketService.ts';
 import logger from './lib/logger.ts';
 import { startTicketWorker } from './workers/ticketWorker.ts';
 
-const app = createApp({ submitTicket, getTicket });
+const app = createApp({ listTickets, submitTicket, getTicket });
 const server = createServer(app);
 const io = createIo(server);
 startNotifyService(io);

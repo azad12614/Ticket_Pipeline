@@ -10,6 +10,10 @@ function makeInMemoryService(): AppDeps {
   const store = new Map<string, TicketWithPhases>();
 
   return {
+    async listTickets() {
+      return [...store.values()].map(t => ({ id: t.id, status: t.status, created_at: t.created_at }));
+    },
+
     async submitTicket(input: TicketInput): Promise<Ticket> {
       const id = uuidv7();
       const ticket: TicketWithPhases = {

@@ -13,7 +13,9 @@
     "format": "prettier --write src",
     "migrate": "node migrations/migrate.ts",
     "db:verify": "docker exec -it tickets-db psql -U ticketuser -d tickets -c \"\\d tickets\"",
-    "test": "vitest run"
+    "test": "vitest run",
+    "submit": "node scripts/ticket-submit.mjs",
+    "watch": "node scripts/ticket-watch.mjs"
   },
   "keywords": [],
   "author": "",

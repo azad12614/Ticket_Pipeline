@@ -33,16 +33,16 @@ if (!res.ok) {
 }
 
 const ticket = await res.json();
-const id = ticket.id;
+const id = ticket.ticketId;
 console.log(`Ticket created: ${id}`);
 console.log('Watching events (ctrl+c to stop)...\n');
 
 const s = io(BASE_URL);
 s.on('connect', () => s.emit('subscribe', id));
 s.on('ticket:event', e => {
-  const { event_type, phase, created_at, metadata } = e;
+  const { event_type, phase, created_at, payload } = e;
   const time = new Date(created_at).toLocaleTimeString();
-  const meta = metadata && Object.keys(metadata).length ? '  ' + JSON.stringify(metadata) : '';
+  const meta = payload && Object.keys(payload).length ? '  ' + JSON.stringify(payload) : '';
   console.log(`[${time}] ${event_type}${phase ? ` (${phase})` : ''}${meta}`);
 });
 s.on('disconnect', () => console.log('\ndisconnected'));

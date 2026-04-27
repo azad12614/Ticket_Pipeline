@@ -1,5 +1,6 @@
 import { enqueueTicket } from '../queues/ticketQueue.ts';
 import {
+  getAllTickets,
   createTicket,
   getTicketWithPhasesById,
   type TicketWithPhases,
@@ -29,6 +30,10 @@ export async function submitTicket(
   const ticket = await createTicketFn(input);
   await enqueueTicketFn(ticket.id);
   return ticket;
+}
+
+export async function listTickets(): Promise<Pick<Ticket, 'id' | 'status' | 'created_at'>[]> {
+  return getAllTickets();
 }
 
 export async function getTicket(id: string): Promise<TicketWithPhases> {

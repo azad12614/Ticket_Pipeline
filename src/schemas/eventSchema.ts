@@ -11,7 +11,7 @@ export const ticketEventSchema = z.object({
     'ticket_completed', 'ticket_failed',
   ]),
   payload: z.unknown().nullable(),
-  created_at: z.date(),
+  created_at: z.coerce.date(),
 });
 
 export type TicketEvent = z.infer<typeof ticketEventSchema>;

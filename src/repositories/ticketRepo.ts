@@ -101,6 +101,11 @@ export async function createTicket(input: TicketInput): Promise<Ticket> {
   }
 }
 
+export async function getAllTickets(): Promise<Pick<Ticket, 'id' | 'status' | 'created_at'>[]> {
+  const result = await pool.query('SELECT id, status, created_at FROM tickets ORDER BY created_at DESC');
+  return result.rows.map(row => ticketSchema.pick({ id: true, status: true, created_at: true }).parse(row));
+}
+
 export async function getTicketById(id: string): Promise<Ticket | null> {
   const result = await pool.query('SELECT * FROM tickets WHERE id = $1', [id]);
   if (!result.rows[0]) return null;
@@ -242,6 +247,7 @@ export async function completePhaseSuccess(
   ticketId: string,
   phase: TicketPhase['phase'],
   output: unknown,
+  eventPayload?: unknown,
 ): Promise<TicketPhase | null> {
   const client = await pool.connect();
   try {
@@ -259,7 +265,7 @@ export async function completePhaseSuccess(
       await client.query('ROLLBACK');
       return null;
     }
-    await insertEventInTx(client, ticketId, 'phase_completed', phase, null);
+    await insertEventInTx(client, ticketId, 'phase_completed', phase, eventPayload ?? null);
     await client.query('COMMIT');
     return ticketPhaseSchema.parse(result.rows[0]);
   } catch (error) {
@@ -304,6 +310,7 @@ export async function failPhaseAttempt(
 }
 
 export interface ITicketRepo {
+  getAllTickets(): Promise<Pick<Ticket, 'id' | 'status' | 'created_at'>[]>;
   createTicket(input: TicketInput): Promise<Ticket>;
   getTicketById(id: string): Promise<Ticket | null>;
   getTicketPhasesByTicketId(ticketId: string): Promise<TicketPhase[]>;
@@ -313,13 +320,14 @@ export interface ITicketRepo {
   completeTicket(ticketId: string): Promise<Ticket | null>;
   failTicket(ticketId: string): Promise<Ticket | null>;
   claimPhaseForProcessing(ticketId: string, phase: TicketPhase['phase']): Promise<TicketPhase | null>;
-  completePhaseSuccess(ticketId: string, phase: TicketPhase['phase'], output: unknown): Promise<TicketPhase | null>;
+  completePhaseSuccess(ticketId: string, phase: TicketPhase['phase'], output: unknown, eventPayload?: unknown): Promise<TicketPhase | null>;
   failPhaseAttempt(ticketId: string, phase: TicketPhase['phase'], reason?: string): Promise<TicketPhase | null>;
   insertEvent(ticketId: string, eventType: TicketEvent['event_type'], phase: TicketEvent['phase'], payload: unknown): Promise<void>;
   getEventsByTicketId(ticketId: string): Promise<TicketEvent[]>;
 }
 
 export const postgresTicketRepo: ITicketRepo = {
+  getAllTickets,
   createTicket,
   getTicketById,
   getTicketPhasesByTicketId,

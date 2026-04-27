@@ -3,6 +3,11 @@ import { processTicketLifecycle, startTicketWorker } from './ticketWorker.ts';
 import { enqueueTicket, purgeQueue } from '../queues/ticketQueue.ts';
 import type { Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketPhase } from '../schemas/phaseSchema.ts';
+import type { PhaseResult } from '../services/aiService.ts';
+
+function makePhaseResult(output: unknown = {}): PhaseResult {
+  return { output, durationMs: 0, provider: 'test' };
+}
 
 const TICKET_ID = '018f8a30-52f7-7d9f-bb7d-6924b8d8a002';
 const RECEIPT = 'test-receipt-handle';
@@ -69,8 +74,8 @@ describe('processTicketLifecycle', () => {
 
     const processPhaseFn = vi
       .fn()
-      .mockResolvedValueOnce({ category: 'billing' })
-      .mockResolvedValueOnce({ reply: 'done' });
+      .mockResolvedValueOnce(makePhaseResult({ category: 'billing' }))
+      .mockResolvedValueOnce(makePhaseResult({ reply: 'done' }));
 
     const deleteMessageFn = vi.fn();
 
@@ -129,7 +134,7 @@ describe('processTicketLifecycle', () => {
   });
 
   it('does not re-run a successful phase when re-processing a queued ticket', async () => {
-    const processPhaseFn = vi.fn(async () => ({ reply: 'drafted' }));
+    const processPhaseFn = vi.fn(async () => makePhaseResult({ reply: 'drafted' }));
     const transitionTicketStatusFn = vi.fn(async () => makeTicket({ status: 'processing' }));
     const completeTicketFn = vi.fn(async () => makeTicket({ status: 'completed' }));
 
@@ -163,7 +168,7 @@ describe('processTicketLifecycle', () => {
   });
 
   it('skips all processing for terminal ticket states', async () => {
-    const processPhaseFn = vi.fn(async () => Promise.resolve({}));
+    const processPhaseFn = vi.fn(async () => makePhaseResult());
     const transitionTicketStatusFn = vi.fn(async () => makeTicket({ status: 'processing' }));
 
     await processTicketLifecycle(TICKET_ID, RECEIPT, {
@@ -251,13 +256,13 @@ describe('processTicketLifecycle', () => {
         .mockResolvedValueOnce(makePhase({ phase: 'draft', status: 'progress', started_at: new Date() })),
       completePhaseSuccessFn,
       processPhaseFn: vi.fn()
-        .mockResolvedValueOnce(triageOutput)
-        .mockResolvedValueOnce(draftOutput),
+        .mockResolvedValueOnce(makePhaseResult(triageOutput))
+        .mockResolvedValueOnce(makePhaseResult(draftOutput)),
       deleteMessageFn: vi.fn(),
     });
 
-    expect(completePhaseSuccessFn).toHaveBeenNthCalledWith(1, TICKET_ID, 'triage', triageOutput);
-    expect(completePhaseSuccessFn).toHaveBeenNthCalledWith(2, TICKET_ID, 'draft', draftOutput);
+    expect(completePhaseSuccessFn).toHaveBeenNthCalledWith(1, TICKET_ID, 'triage', triageOutput, { durationMs: 0, provider: 'test' });
+    expect(completePhaseSuccessFn).toHaveBeenNthCalledWith(2, TICKET_ID, 'draft', draftOutput, { durationMs: 0, provider: 'test' });
   });
 
   it('claims only the pending phase when triage already succeeded', async () => {
@@ -282,7 +287,7 @@ describe('processTicketLifecycle', () => {
       completePhaseSuccessFn: vi.fn(async () =>
         makePhase({ phase: 'draft', status: 'success', completed_at: new Date() }),
       ),
-      processPhaseFn: vi.fn(async () => ({ reply: 'done' })),
+      processPhaseFn: vi.fn(async () => makePhaseResult({ reply: 'done' })),
       deleteMessageFn: vi.fn(),
     });
 
@@ -318,7 +323,7 @@ describe('startTicketWorker SQS integration', () => {
 
     await vi.waitFor(
       () => { expect(getTicketByIdFn).toHaveBeenCalledWith(ticketId); },
-      { timeout: 10000 },
+      { timeout: 25000 },
     );
 
     worker.stop();
@@ -326,5 +331,5 @@ describe('startTicketWorker SQS integration', () => {
 
     expect(transitionTicketStatusFn).toHaveBeenCalledWith(ticketId, ['queued'], 'processing');
     expect(completeTicketFn).toHaveBeenCalledWith(ticketId);
-  });
+  }, 30000);
 });

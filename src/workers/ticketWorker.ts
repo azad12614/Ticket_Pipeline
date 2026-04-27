@@ -2,6 +2,7 @@ import { FatalPhaseError } from '../lib/errors.ts';
 import logger from '../lib/logger.ts';
 import { receiveTickets, deleteTicketMessage, changeMessageVisibility } from '../queues/ticketQueue.ts';
 import { runPhase } from '../services/aiService.ts';
+import type { PhaseResult } from '../services/aiService.ts';
 import {
   claimPhaseForProcessing,
   completePhaseSuccess,
@@ -39,7 +40,7 @@ type QueueDeps = {
 };
 
 type PhaseDeps = {
-  processPhaseFn?: (ticketId: string, phase: PhaseName) => Promise<unknown>;
+  processPhaseFn?: (ticketId: string, phase: PhaseName) => Promise<PhaseResult>;
 };
 
 export type WorkerDeps = RepoDeps & QueueDeps & PhaseDeps;
@@ -150,9 +151,9 @@ async function orchestratePhases(
     logger.info({ ticketId, phase: nextPhase, attempt: phaseClaim.attempts }, 'Phase started');
 
     try {
-      const output = await deps.processPhaseFn(ticketId, nextPhase);
-      await deps.completePhaseSuccessFn(ticketId, nextPhase, output);
-      logger.info({ ticketId, phase: nextPhase }, 'Phase completed');
+      const { output, durationMs, provider } = await deps.processPhaseFn(ticketId, nextPhase);
+      await deps.completePhaseSuccessFn(ticketId, nextPhase, output, { durationMs, provider });
+      logger.info({ ticketId, phase: nextPhase, durationMs, provider }, 'Phase completed');
     } catch (phaseError) {
       await handlePhaseError(phaseError, ticketId, nextPhase, receiptHandle, deps);
       return;

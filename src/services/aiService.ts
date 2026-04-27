@@ -3,23 +3,25 @@ import { config } from '../lib/config.ts';
 import { FatalPhaseError } from '../lib/errors.ts';
 import logger from '../lib/logger.ts';
 import { postgresTicketRepo, type ITicketRepo } from '../repositories/ticketRepo.ts';
-import { draftOutputSchema, type DraftOutput } from '../schemas/draftSchema.ts';
-import { triageOutputSchema, type TriageOutput } from '../schemas/triageSchema.ts';
+import { draftOutputSchema } from '../schemas/draftSchema.ts';
+import { triageOutputSchema } from '../schemas/triageSchema.ts';
 
 export type PortkeyClient = InstanceType<typeof PortkeyModule.Portkey>;
 
-type PortkeyResponse = { model?: string; getHeaders?: () => Record<string, string> | null | undefined };
+type PortkeyResponse = {
+  model?: string;
+  getHeaders?: () => Record<string, string> | null | undefined;
+};
 
 function resolveProvider(response: PortkeyResponse): string {
-  return (
-    response.model ??
-    response.getHeaders?.()?.['x-portkey-provider'] ??
-    'unknown'
-  );
+  return response.model ?? response.getHeaders?.()?.['x-portkey-provider'] ?? 'unknown';
 }
 
 type PhaseName = 'triage' | 'draft';
-type PhaseHandler = (ticketId: string) => Promise<unknown>;
+
+export type PhaseResult = { output: unknown; durationMs: number; provider: string };
+
+type PhaseHandler = (ticketId: string) => Promise<PhaseResult>;
 
 export function createPortkeyClient(): PortkeyClient {
   return new PortkeyModule.Portkey({
@@ -80,11 +82,13 @@ const DRAFT_TOOL = {
       properties: {
         customer_reply: {
           type: 'string',
-          description: 'Warm, professional customer-facing reply addressing the specific issue. Min 50 chars.',
+          description:
+            'Warm, professional customer-facing reply addressing the specific issue. Min 50 chars.',
         },
         internal_note: {
           type: 'string',
-          description: 'Internal note for the agent referencing triage category, priority, and escalation status.',
+          description:
+            'Internal note for the agent referencing triage category, priority, and escalation status.',
         },
         next_actions: {
           type: 'array',
@@ -108,12 +112,12 @@ export class AiService {
     this.repo = repo;
     this.portkey = portkey;
     this.phaseHandlers = {
-      triage: (ticketId) => this.triageTicket(ticketId),
-      draft: (ticketId) => this.draftResolution(ticketId),
+      triage: ticketId => this.triageTicket(ticketId),
+      draft: ticketId => this.draftResolution(ticketId),
     } satisfies Record<PhaseName, PhaseHandler>;
   }
 
-  async triageTicket(ticketId: string): Promise<TriageOutput> {
+  async triageTicket(ticketId: string): Promise<PhaseResult> {
     const ticket = await this.repo.getTicketById(ticketId);
     if (!ticket) throw new FatalPhaseError(`Ticket ${ticketId} not found`);
 
@@ -139,7 +143,9 @@ export class AiService {
       { timeout: 30_000 },
     );
 
-    logger.info({ ticketId, durationMs: Date.now() - start, provider: resolveProvider(response) }, 'AI triage complete');
+    const durationMs = Date.now() - start;
+    const provider = resolveProvider(response);
+    logger.info({ ticketId, durationMs, provider }, 'AI triage complete');
 
     if (!response.choices.length) {
       throw new FatalPhaseError('Empty choices in triage response');
@@ -161,10 +167,10 @@ export class AiService {
       throw new FatalPhaseError(`Triage output failed validation: ${parsed.error.message}`);
     }
 
-    return parsed.data;
+    return { output: parsed.data, durationMs, provider };
   }
 
-  async draftResolution(ticketId: string): Promise<DraftOutput> {
+  async draftResolution(ticketId: string): Promise<PhaseResult> {
     const [ticket, phases] = await Promise.all([
       this.repo.getTicketById(ticketId),
       this.repo.getTicketPhasesByTicketId(ticketId),
@@ -173,7 +179,8 @@ export class AiService {
     if (!ticket) throw new FatalPhaseError(`Ticket ${ticketId} not found`);
 
     const triagePhase = phases.find(p => p.phase === 'triage' && p.status === 'success');
-    if (!triagePhase) throw new FatalPhaseError(`Triage output not available for ticket ${ticketId}`);
+    if (!triagePhase)
+      throw new FatalPhaseError(`Triage output not available for ticket ${ticketId}`);
 
     const triageParsed = triageOutputSchema.safeParse(triagePhase.output);
     if (!triageParsed.success) {
@@ -202,7 +209,9 @@ export class AiService {
       { timeout: 30_000 },
     );
 
-    logger.info({ ticketId, durationMs: Date.now() - start, provider: resolveProvider(response) }, 'AI draft complete');
+    const durationMs = Date.now() - start;
+    const provider = resolveProvider(response);
+    logger.info({ ticketId, durationMs, provider }, 'AI draft complete');
 
     if (!response.choices.length) {
       throw new FatalPhaseError('Empty choices in draft response');
@@ -224,10 +233,10 @@ export class AiService {
       throw new FatalPhaseError(`Draft output failed validation: ${parsed.error.message}`);
     }
 
-    return parsed.data;
+    return { output: parsed.data, durationMs, provider };
   }
 
-  async runPhase(ticketId: string, phase: PhaseName): Promise<unknown> {
+  async runPhase(ticketId: string, phase: PhaseName): Promise<PhaseResult> {
     const handler = this.phaseHandlers[phase];
     if (!handler) throw new Error(`Unknown phase: ${String(phase)}`);
     return handler(ticketId);
@@ -239,7 +248,14 @@ export type RunPhaseDeps = {
   portkey?: PortkeyClient;
 };
 
-export function runPhase(ticketId: string, phase: PhaseName, deps: RunPhaseDeps = {}): Promise<unknown> {
-  const service = new AiService(deps.repo ?? postgresTicketRepo, deps.portkey ?? createPortkeyClient());
+export function runPhase(
+  ticketId: string,
+  phase: PhaseName,
+  deps: RunPhaseDeps = {},
+): Promise<PhaseResult> {
+  const service = new AiService(
+    deps.repo ?? postgresTicketRepo,
+    deps.portkey ?? createPortkeyClient(),
+  );
   return service.runPhase(ticketId, phase);
 }
