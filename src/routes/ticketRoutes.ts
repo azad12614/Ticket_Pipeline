@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { submitTicketHandler, getTicketStatusHandler } from '../controllers/ticketController.ts';
+import { makeSubmitTicketHandler, makeGetTicketStatusHandler } from '../controllers/ticketController.ts';
+import type { TicketControllerDeps } from '../controllers/ticketController.ts';
 
-const router = Router();
-
-router.post('/', submitTicketHandler);
-router.get('/:id', getTicketStatusHandler);
-
-export default router;
+export function createTicketRouter(deps: TicketControllerDeps): Router {
+  const router = Router();
+  router.post('/', makeSubmitTicketHandler(deps));
+  router.get('/:id', makeGetTicketStatusHandler(deps));
+  return router;
+}

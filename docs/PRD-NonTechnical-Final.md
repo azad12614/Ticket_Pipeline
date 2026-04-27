@@ -1,12 +1,13 @@
 # AI-Powered Support Ticket Processing Pipeline
+
 ## Non-Technical PRD
 
-| Field | Details |
-|---|---|
-| **Version** | 1.0.0 |
-| **Status** | Final |
+| Field        | Details                                                      |
+| ------------ | ------------------------------------------------------------ |
+| **Version**  | 1.0.0                                                        |
+| **Status**   | Final                                                        |
 | **Audience** | Product Managers, Stakeholders, Customer Success, Leadership |
-| **Date** | April 2026 |
+| **Date**     | April 2026                                                   |
 
 ---
 
@@ -74,14 +75,14 @@ AI can handle all of this mechanical work instantly and consistently, freeing ag
 
 ### Success Metrics
 
-| Metric | Target |
-|---|---|
-| Ticket triage completion time | < 30 seconds from submission |
-| Full pipeline completion time | < 60 seconds from submission |
-| System acknowledgement time | < 200 milliseconds |
-| Ticket processing success rate | ≥ 95% without manual intervention |
-| System uptime | 99.9% |
-| Tickets lost due to system failure | Zero |
+| Metric                             | Target                            |
+| ---------------------------------- | --------------------------------- |
+| Ticket triage completion time      | < 30 seconds from submission      |
+| Full pipeline completion time      | < 60 seconds from submission      |
+| System acknowledgement time        | < 200 milliseconds                |
+| Ticket processing success rate     | ≥ 95% without manual intervention |
+| System uptime                      | 99.9%                             |
+| Tickets lost due to system failure | Zero                              |
 
 ### What This Is NOT
 
@@ -146,24 +147,24 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 
 ##### Acceptance Criteria
 
-- [ ] Every submitted ticket is saved to the database before any processing begins
-- [ ] Each ticket is assigned a unique identifier the moment it is received
-- [ ] Ticket status is updated at every stage of the pipeline
-- [ ] Tickets remain in the database even if processing fails
+- [x] Every submitted ticket is saved to the database before any processing begins
+- [x] Each ticket is assigned a unique identifier the moment it is received
+- [x] Ticket status is updated at every stage of the pipeline
+- [x] Tickets remain in the database even if processing fails
 
 ##### Definition of Done
 
-- [ ] Ticket data confirmed present in the database after submission
-- [ ] Unique ID generated for every ticket — no duplicates
-- [ ] Status field updates verified at each pipeline stage
-- [ ] Failed tickets remain in the database with their failure state recorded
+- [x] Ticket data confirmed present in the database after submission
+- [x] Unique ID generated for every ticket — no duplicates
+- [x] Status field updates verified at each pipeline stage
+- [x] Failed tickets remain in the database with their failure state recorded
 
 ##### Checklist
 
-- [ ] Database table set up for tickets with status tracking
-- [ ] Unique ID generation confirmed working
-- [ ] Status lifecycle defined: queued → processing → completed / failed
-- [ ] No ticket deleted or overwritten at any stage
+- [x] Database table set up for tickets with status tracking
+- [x] Unique ID generation confirmed working
+- [x] Status lifecycle defined: queued → processing → completed / failed
+- [x] No ticket deleted or overwritten at any stage
 
 ---
 
@@ -175,24 +176,28 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 
 ##### Acceptance Criteria
 
-- [ ] Each phase (analysis and drafting) has its own independently tracked status
-- [ ] A phase that has completed successfully is never re-run, even on re-processing
-- [ ] How many times each phase has been attempted is recorded
-- [ ] Phase output is stored and linked to the originating ticket
+- [x] Each phase (analysis and drafting) has its own independently tracked status
+- [x] Both phase rows are created when the ticket is submitted
+- [x] A phase that has completed successfully is never re-run, even on re-processing
+- [x] How many times each phase has been attempted is recorded
+- [x] Phase output is stored and linked to the originating ticket
 
 ##### Definition of Done
 
-- [ ] Phase tracking confirmed independent: Phase 1 and Phase 2 have separate status records
-- [ ] Completed phase confirmed never re-executed — verified by test
-- [ ] Attempt count increments correctly on each retry
-- [ ] Phase output retrievable from the ticket status endpoint when complete
+- [x] Phase tracking confirmed independent: Phase 1 and Phase 2 have separate status records
+- [x] Completed phase confirmed never re-executed — verified by test
+- [x] Attempt count increments correctly on each retry
+- [x] Phase output retrievable from the ticket status endpoint when complete
+- [x] Phase rows exist up front so the status endpoint always has a stable shape
 
 ##### Checklist
 
-- [ ] Database table for per-phase tracking created
-- [ ] Phase status lifecycle: started → progress → success / failure
-- [ ] Attempt counter increments atomically on each failure
-- [ ] Phase output stored as structured data linked to ticket
+- [x] Database table for per-phase tracking created
+- [x] Phase status lifecycle: started → progress → success / failure
+- [x] Attempt counter increments atomically on each failure
+- [x] Phase output stored as structured data linked to ticket
+- [x] Phase rows created at submission time for both triage and draft
+- [x] Completed phase skip logic enforced on worker pickup and DB claim
 
 ---
 
@@ -248,7 +253,7 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 ##### Checklist
 
 - [ ] Automated daily job implemented to archive tickets older than 90 days
-- [ ] Archive flag added to ticket record (not deletion)
+- [x] Archive flag added to ticket record (not deletion)
 - [ ] Default list endpoint excludes archived tickets
 - [ ] Archive filter available on list endpoint (`?archived=true`)
 
@@ -256,12 +261,10 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 
 ### Kanban
 
-| Backlog | In Progress | Review | Done |
-|---|---|---|---|
-| US-1.1: Ticket persistence | — | — | — |
-| US-1.2: Per-phase tracking | — | — | — |
-| US-1.3: Audit trail | — | — | — |
-| US-1.4: Soft-archive | — | — | — |
+| Backlog              | In Progress | Review | Done                         |
+| -------------------- | ----------- | ------ | ---------------------------- |
+| US-1.3: Audit trail  | —           | —      | US-1.1: Ticket persistence   |
+| US-1.4: Soft-archive | —           | —      | US-1.2: Per-phase tracking   |
 
 ---
 
@@ -289,55 +292,55 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 
 ##### Acceptance Criteria
 
-- [ ] Ticket submission returns a confirmation in under 200 milliseconds
-- [ ] Response includes a unique ticket ID for tracking
-- [ ] Response clearly communicates that processing is happening in the background
-- [ ] Customer is never left waiting while AI processing runs
+- [x] Ticket submission returns a confirmation in under 200 milliseconds
+- [x] Response includes a unique ticket ID for tracking
+- [x] Response clearly communicates that processing is happening in the background
+- [x] Customer is never left waiting while AI processing runs
 
 ##### Definition of Done
 
-- [ ] Response time confirmed under 200ms in testing
-- [ ] Unique ticket ID confirmed present in every response
-- [ ] Submission confirmed not to block while AI runs
-- [ ] Missing required fields return a helpful error message (not a crash)
+- [x] Response time confirmed under 200ms in testing
+- [x] Unique ticket ID confirmed present in every response
+- [x] Submission confirmed not to block while AI runs
+- [x] Missing required fields return a helpful error message (not a crash)
 
 ##### Checklist
 
-- [ ] Ticket submission endpoint responds with 202 status (accepted, not yet complete)
-- [ ] Ticket saved to database before any background processing begins
-- [ ] Required fields validated: subject and ticket body
-- [ ] Invalid submissions return a clear, structured error message
+- [x] Ticket submission endpoint responds with 202 status (accepted, not yet complete)
+- [x] Ticket saved to database before any background processing begins
+- [x] Required fields validated: subject and ticket body
+- [x] Invalid submissions return a clear, structured error message
 
 ---
 
 #### US-2.2 — Ticket Status Check
 
-**Scope:** MVP *(event history excluded — deferred to US-1.3)*
+**Scope:** MVP _(event history excluded — deferred to US-1.3)_
 
 **As a support agent, I want to check the current status of any ticket so that I know where it is in the pipeline.**
 
 ##### Acceptance Criteria
 
-- [ ] Any ticket can be looked up by its ID at any time
-- [ ] Status response shows the current stage clearly
-- [ ] Response includes the output of each AI phase when it is complete
+- [x] Any ticket can be looked up by its ID at any time
+- [x] Status response shows the current stage clearly
+- [x] Response includes the output of each AI phase when it is complete
 - [ ] Full history of every action taken on the ticket is included
-- [ ] A clear error is returned for invalid ticket IDs
+- [x] A clear error is returned for invalid ticket IDs
 
 ##### Definition of Done
 
-- [ ] Status endpoint returns correct current stage for tickets in all states
-- [ ] Phase outputs present in response when phases are complete
-- [ ] Phase outputs absent when phases are not yet complete
+- [x] Status endpoint returns correct current stage for tickets in all states
+- [x] Phase outputs present in response when phases are complete
+- [x] Phase outputs absent when phases are not yet complete
 - [ ] Full history returned in correct chronological order
-- [ ] 404 response confirmed for unknown ticket IDs
+- [x] 404 response confirmed for unknown ticket IDs
 
 ##### Checklist
 
-- [ ] Status endpoint implemented and returns: ticket status, phase statuses, phase outputs, event history
-- [ ] Phase output only shown when phase is fully complete
-- [ ] Event history deferred to US-1.3 (non-MVP) — not included in MVP scope
-- [ ] Invalid ticket ID returns clear not-found response
+- [x] Status endpoint implemented and returns: ticket status, phase statuses, phase outputs, event history
+- [x] Phase output only shown when phase is fully complete
+- [x] Event history deferred to US-1.3 (non-MVP) — not included in MVP scope
+- [x] Invalid ticket ID returns clear not-found response
 
 ---
 
@@ -396,18 +399,17 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 - [ ] Replay endpoint implemented and accepts only failed tickets
 - [ ] Replay resets ticket status to queued
 - [ ] Replay resets only the failed phase to pending — completed phases left intact
+- [ ] Replay resets the replayed phase attempt count to 0
 - [ ] Clear error response returned when ticket is not in failed state (409 Conflict)
 
 ---
 
 ### Kanban
 
-| Backlog | In Progress | Review | Done |
-|---|---|---|---|
-| US-2.1: Immediate acknowledgement | — | — | — |
-| US-2.2: Ticket status check | — | — | — |
-| US-2.3: Ticket list & filtering | — | — | — |
-| US-2.4: Manual retry | — | — | — |
+| Backlog                         | In Progress | Review | Done                              |
+| ------------------------------- | ----------- | ------ | --------------------------------- |
+| US-2.3: Ticket list & filtering | —           | —      | US-2.1: Immediate acknowledgement |
+| US-2.4: Manual retry            | —           | —      | US-2.2: Ticket status check       |
 
 ---
 
@@ -481,7 +483,7 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 #### US-3.3 — Automatic Retry
 
-**Scope:** MVP *(needs-attention queue excluded — deferred to US-6.2)*
+**Scope:** MVP _(needs-attention queue excluded — deferred to US-6.2)_
 
 **As a customer, I want my ticket retried automatically if something goes wrong so that a temporary failure does not permanently delay my support request.**
 
@@ -562,13 +564,13 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 ### Kanban
 
-| Backlog | In Progress | Review | Done |
-|---|---|---|---|
-| US-3.1: Async processing | — | — | — |
-| US-3.2: Phase handoff | — | — | — |
-| US-3.3: Automatic retry | — | — | — |
-| US-3.4: No work duplication | — | — | — |
-| US-3.5: Graceful shutdown | — | — | — |
+| Backlog                     | In Progress | Review | Done |
+| --------------------------- | ----------- | ------ | ---- |
+| US-3.1: Async processing    | —           | —      | —    |
+| US-3.2: Phase handoff       | —           | —      | —    |
+| US-3.3: Automatic retry     | —           | —      | —    |
+| US-3.4: No work duplication | —           | —      | —    |
+| US-3.5: Graceful shutdown   | —           | —      | —    |
 
 ---
 
@@ -658,7 +660,7 @@ This switching happens automatically. Agents never know which provider was used 
 
 #### US-4.3 — Output Quality Guarantee
 
-**Scope:** MVP *(manual review workflow excluded — deferred to US-6.2)*
+**Scope:** MVP _(manual review workflow excluded — deferred to US-6.2)_
 
 **As a support agent, I want AI outputs validated before they reach me so that I only see well-structured, usable data.**
 
@@ -716,12 +718,12 @@ This switching happens automatically. Agents never know which provider was used 
 
 ### Kanban
 
-| Backlog | In Progress | Review | Done |
-|---|---|---|---|
-| US-4.1: AI triage (Phase 1) | — | — | — |
-| US-4.2: Resolution draft (Phase 2) | — | — | — |
-| US-4.3: Output quality guarantee | — | — | — |
-| US-4.4: AI provider fallback | — | — | — |
+| Backlog                            | In Progress | Review | Done |
+| ---------------------------------- | ----------- | ------ | ---- |
+| US-4.1: AI triage (Phase 1)        | —           | —      | —    |
+| US-4.2: Resolution draft (Phase 2) | —           | —      | —    |
+| US-4.3: Output quality guarantee   | —           | —      | —    |
+| US-4.4: AI provider fallback       | —           | —      | —    |
 
 ---
 
@@ -826,11 +828,11 @@ Without live updates, agents and ops teams are flying blind. They would have to 
 
 ### Kanban
 
-| Backlog | In Progress | Review | Done |
-|---|---|---|---|
-| US-5.1: Phase lifecycle notifications | — | — | — |
-| US-5.2: Per-ticket subscription | — | — | — |
-| US-5.3: Ops dashboard visibility | — | — | — |
+| Backlog                               | In Progress | Review | Done |
+| ------------------------------------- | ----------- | ------ | ---- |
+| US-5.1: Phase lifecycle notifications | —           | —      | —    |
+| US-5.2: Per-ticket subscription       | —           | —      | —    |
+| US-5.3: Ops dashboard visibility      | —           | —      | —    |
 
 ---
 
@@ -965,12 +967,12 @@ Production systems fail. AI providers have outages. Networks hiccup. The questio
 
 ### Kanban
 
-| Backlog | In Progress | Review | Done |
-|---|---|---|---|
-| US-6.1: Full audit trail | — | — | — |
-| US-6.2: Needs-attention queue | — | — | — |
-| US-6.3: Phase 1 preservation | — | — | — |
-| US-6.4: Structured logging | — | — | — |
+| Backlog                       | In Progress | Review | Done |
+| ----------------------------- | ----------- | ------ | ---- |
+| US-6.1: Full audit trail      | —           | —      | —    |
+| US-6.2: Needs-attention queue | —           | —      | —    |
+| US-6.3: Phase 1 preservation  | —           | —      | —    |
+| US-6.4: Structured logging    | —           | —      | —    |
 
 ---
 
@@ -978,12 +980,12 @@ Production systems fail. AI providers have outages. Networks hiccup. The questio
 
 ### Sprint Plan
 
-| Sprint | Duration | What Gets Built | Milestone |
-|---|---|---|---|
-| **Sprint 1** | Week 1–2 | Foundation + REST API | System accepts, stores, and retrieves tickets |
-| **Sprint 2** | Week 3–4 | Worker + AI Triage (Phase 1) | Tickets are automatically triaged by AI |
+| Sprint       | Duration | What Gets Built                           | Milestone                                          |
+| ------------ | -------- | ----------------------------------------- | -------------------------------------------------- |
+| **Sprint 1** | Week 1–2 | Foundation + REST API                     | System accepts, stores, and retrieves tickets      |
+| **Sprint 2** | Week 3–4 | Worker + AI Triage (Phase 1)              | Tickets are automatically triaged by AI            |
 | **Sprint 3** | Week 5–6 | Resolution Draft (Phase 2) + Live Updates | Full pipeline live, agents see drafts in real time |
-| **Sprint 4** | Week 7–8 | Reliability + Observability + Polish | Production-ready with full safety net |
+| **Sprint 4** | Week 7–8 | Reliability + Observability + Polish      | Production-ready with full safety net              |
 
 ### Rollout Strategy
 
@@ -997,12 +999,12 @@ Production systems fail. AI providers have outages. Networks hiccup. The questio
 
 ### Risks
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| AI output quality insufficient for agent use | Medium | High | Quality review gate in Sprint 3 with support team sign-off required before broad rollout |
-| All three AI providers unavailable simultaneously | Low | High | Tickets queue safely and are processed when service resumes — no data loss |
-| Processing takes too long (> 30s per ticket) | Medium | Medium | Time limits configured per phase; slow tickets flagged for investigation |
-| Costs exceed budget if AI usage spikes | Medium | Medium | Token usage logged per call; budget alerts configured in AI gateway |
+| Risk                                              | Likelihood | Impact | Mitigation                                                                               |
+| ------------------------------------------------- | ---------- | ------ | ---------------------------------------------------------------------------------------- |
+| AI output quality insufficient for agent use      | Medium     | High   | Quality review gate in Sprint 3 with support team sign-off required before broad rollout |
+| All three AI providers unavailable simultaneously | Low        | High   | Tickets queue safely and are processed when service resumes — no data loss               |
+| Processing takes too long (> 30s per ticket)      | Medium     | Medium | Time limits configured per phase; slow tickets flagged for investigation                 |
+| Costs exceed budget if AI usage spikes            | Medium     | Medium | Token usage logged per call; budget alerts configured in AI gateway                      |
 
 ### Open Questions
 
@@ -1014,4 +1016,4 @@ Production systems fail. AI providers have outages. Networks hiccup. The questio
 
 ---
 
-*End of Document — Version 1.0.0*
+_End of Document — Version 1.0.0_
