@@ -38,7 +38,7 @@ export function makeGetTicketStatusHandler(deps: TicketControllerDeps) {
       const idParam = req.params['id'];
       const id = Array.isArray(idParam) ? (idParam[0] ?? '') : (idParam ?? '');
       const ticket = await deps.getTicket(id);
-      res.status(200).json({ ticketId: ticket.id, status: ticket.status, phases: ticket.phases });
+      res.status(200).json({ ticketId: ticket.id, status: ticket.status, phases: ticket.phases, events: ticket.events });
     } catch (err) {
       next(err);
     }

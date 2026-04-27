@@ -453,32 +453,33 @@ This is the heart of the system. It must be reliable above all else — no ticke
 
 #### US-3.5 — Graceful Shutdown
 
-**Scope:** Non-MVP — Sprint 4
+**Scope:** Non-MVP — Done early (implemented in Epic 3)
 
 **As a support agent, I want tickets that are being processed to complete even when the system restarts so that no ticket is lost during maintenance.**
 
 ##### Acceptance Criteria
 
-- [ ] When the system is asked to stop, it finishes its current job first
-- [ ] No in-flight ticket is dropped on graceful shutdown
-- [ ] Worker stops accepting new jobs immediately on shutdown signal
+- [x] When the system is asked to stop, it finishes its current job first
+- [x] No in-flight ticket is dropped on graceful shutdown
+- [x] Worker stops accepting new jobs immediately on shutdown signal
 
 ##### Definition of Done
 
-- [ ] Graceful shutdown tested: in-flight ticket completes before worker stops
-- [ ] No ticket lost or corrupted during shutdown
-- [ ] Worker stops polling for new jobs immediately after shutdown signal
+- [x] Graceful shutdown tested: in-flight ticket completes before worker stops
+- [x] No ticket lost or corrupted during shutdown
+- [x] Worker stops polling for new jobs immediately after shutdown signal
 
 ---
 
 ### Kanban
 
-| Backlog                   | In Progress | Review | Done                        |
-| ------------------------- | ----------- | ------ | --------------------------- |
-| US-3.5: Graceful shutdown | —           | —      | US-3.1: Async processing    |
-| —                         | —           | —      | US-3.2: Phase handoff       |
-| —                         | —           | —      | US-3.3: Automatic retry     |
-| —                         | —           | —      | US-3.4: No work duplication |
+| Backlog | In Progress | Review | Done                        |
+| ------- | ----------- | ------ | --------------------------- |
+| —       | —           | —      | US-3.1: Async processing    |
+| —       | —           | —      | US-3.2: Phase handoff       |
+| —       | —           | —      | US-3.3: Automatic retry     |
+| —       | —           | —      | US-3.4: No work duplication |
+| —       | —           | —      | US-3.5: Graceful shutdown   |
 
 ---
 
@@ -516,17 +517,17 @@ This switching happens automatically. Agents never know which provider was used 
 
 ##### Acceptance Criteria
 
-- [ ] Every ticket receives an AI analysis with all 6 required fields
-- [ ] The 6 fields are: category, priority, sentiment, escalation flag, routing target, and summary
-- [ ] Analysis is produced within 30 seconds of ticket submission
-- [ ] Analysis output is stored and accessible via the ticket status endpoint
+- [x] Every ticket receives an AI analysis with all 6 required fields
+- [x] The 6 fields are: category, priority, sentiment, escalation flag, routing target, and summary
+- [x] Analysis is produced within 30 seconds of ticket submission
+- [x] Analysis output is stored and accessible via the ticket status endpoint
 
 ##### Definition of Done
 
-- [ ] All 6 fields confirmed present for every processed ticket
-- [ ] Each field confirmed to contain a valid, structured value (not free text)
-- [ ] Analysis stored in the database and retrievable via API
-- [ ] Processing time confirmed under 30 seconds in testing
+- [x] All 6 fields confirmed present for every processed ticket
+- [x] Each field confirmed to contain a valid, structured value (not free text)
+- [x] Analysis stored in the database and retrievable via API
+- [x] Processing time confirmed under 30 seconds in testing
 
 ---
 
@@ -538,17 +539,17 @@ This switching happens automatically. Agents never know which provider was used 
 
 ##### Acceptance Criteria
 
-- [ ] Every ticket receives a resolution draft with all 3 required outputs
-- [ ] The 3 outputs are: customer-facing reply, internal support note, and recommended next actions
-- [ ] The draft uses the Phase 1 analysis as context — not just the raw ticket
-- [ ] Phase 2 never runs until Phase 1 has fully completed
+- [x] Every ticket receives a resolution draft with all 3 required outputs
+- [x] The 3 outputs are: customer-facing reply, internal support note, and recommended next actions
+- [x] The draft uses the Phase 1 analysis as context — not just the raw ticket
+- [x] Phase 2 never runs until Phase 1 has fully completed
 
 ##### Definition of Done
 
-- [ ] All 3 output fields confirmed present for every processed ticket
-- [ ] Customer reply confirmed to address the specific issue (not generic)
-- [ ] Internal note confirmed to reference the triage category and priority
-- [ ] Phase 2 confirmed blocked when Phase 1 is not complete
+- [x] All 3 output fields confirmed present for every processed ticket
+- [x] Customer reply confirmed to address the specific issue (not generic)
+- [x] Internal note confirmed to reference the triage category and priority
+- [x] Phase 2 confirmed blocked when Phase 1 is not complete
 
 ---
 
@@ -560,17 +561,17 @@ This switching happens automatically. Agents never know which provider was used 
 
 ##### Acceptance Criteria
 
-- [ ] AI output is checked against a strict format before being accepted
-- [ ] Malformed or incomplete output is rejected — not silently stored
-- [ ] A rejected output triggers the phase failure and retry flow
-- [ ] If all retry attempts produce invalid output, the ticket is flagged for manual review
+- [x] AI output is checked against a strict format before being accepted
+- [x] Malformed or incomplete output is rejected — not silently stored
+- [x] A rejected output immediately fails the phase and routes to DLQ — no retry attempted (retrying identical input produces identical malformed output)
+- [x] Ticket is marked failed immediately and visible to ops via status filter
 
 ##### Definition of Done
 
-- [ ] Validation confirmed to reject incomplete AI output
-- [ ] Malformed response confirmed to trigger failure handling (not partial storage)
-- [ ] Invalid output confirmed never written to the database
-- [ ] Manual review flag confirmed set after validation failures exhaust retries
+- [x] Validation confirmed to reject incomplete AI output
+- [x] Malformed response confirmed to trigger failure handling (not partial storage)
+- [x] Invalid output confirmed never written to the database
+- [x] Zod failure confirmed to skip retry — ticket immediately marked failed and routed to DLQ
 
 ---
 
@@ -598,12 +599,11 @@ This switching happens automatically. Agents never know which provider was used 
 
 ### Kanban
 
-| Backlog                            | In Progress | Review | Done |
-| ---------------------------------- | ----------- | ------ | ---- |
-| US-4.1: AI triage (Phase 1)        | —           | —      | —    |
-| US-4.2: Resolution draft (Phase 2) | —           | —      | —    |
-| US-4.3: Output quality guarantee   | —           | —      | —    |
-| US-4.4: AI provider fallback       | —           | —      | —    |
+| Backlog                      | In Progress | Review | Done                               |
+| ---------------------------- | ----------- | ------ | ---------------------------------- |
+| US-4.4: AI provider fallback | —           | —      | US-4.1: AI triage (Phase 1)        |
+| —                            | —           | —      | US-4.2: Resolution draft (Phase 2) |
+| —                            | —           | —      | US-4.3: Output quality guarantee   |
 
 ---
 
@@ -779,34 +779,34 @@ Production systems fail. AI providers have outages. Networks hiccup. The questio
 
 #### US-6.4 — Structured Logging
 
-**Scope:** Non-MVP — Sprint 3–4
+**Scope:** Non-MVP — Done early (implemented in Epic 1)
 
 **As a support agent, I want every processing event logged so that my team can diagnose issues quickly without losing visibility into what happened.**
 
 ##### Acceptance Criteria
 
-- [ ] Every pipeline event produces a structured log entry
-- [ ] Logs include: event type, timestamp, ticket ID, phase, attempt number, and outcome
-- [ ] No customer personally identifiable information (PII) appears in any log
-- [ ] Log levels are used correctly: info for normal flow, warn for retries, error for failures
+- [x] Every pipeline event produces a structured log entry
+- [x] Logs include: event type, timestamp, ticket ID, phase, attempt number, and outcome
+- [x] No customer personally identifiable information (PII) appears in any log
+- [x] Log levels are used correctly: info for normal flow, warn for retries, error for failures
 
 ##### Definition of Done
 
-- [ ] All 8 required log event types confirmed present in a full pipeline run
-- [ ] Zero PII confirmed in any log output — body and email fields absent
-- [ ] Log levels verified: retries use warn, failures use error, success uses info
-- [ ] Logs readable without additional tooling in development
+- [x] All 8 required log event types confirmed present in a full pipeline run
+- [x] Zero PII confirmed in any log output — body and email fields absent
+- [x] Log levels verified: retries use warn, failures use error, success uses info
+- [x] Logs readable without additional tooling in development
 
 ---
 
 ### Kanban
 
-| Backlog                       | In Progress | Review | Done |
-| ----------------------------- | ----------- | ------ | ---- |
-| US-6.1: Full audit trail      | —           | —      | —    |
-| US-6.2: Needs-attention queue | —           | —      | —    |
-| US-6.3: Phase 1 preservation  | —           | —      | —    |
-| US-6.4: Structured logging    | —           | —      | —    |
+| Backlog                       | In Progress | Review | Done                       |
+| ----------------------------- | ----------- | ------ | -------------------------- |
+| US-6.1: Full audit trail      | —           | —      | —                          |
+| US-6.2: Needs-attention queue | —           | —      | —                          |
+| US-6.3: Phase 1 preservation  | —           | —      | —                          |
+| —                             | —           | —      | US-6.4: Structured logging |
 
 ---
 

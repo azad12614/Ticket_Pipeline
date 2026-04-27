@@ -1,4 +1,5 @@
 import pino from 'pino';
+import { config } from './config.ts';
 
 const PII_FIELDS = new Set(['body', 'email']);
 
@@ -11,12 +12,12 @@ function redactPii(obj: Record<string, unknown>): Record<string, unknown> {
 }
 
 const transport =
-  process.env['NODE_ENV'] !== 'production'
+  config.nodeEnv !== 'production'
     ? { target: 'pino-pretty', options: { colorize: true } }
     : undefined;
 
 const logger = pino({
-  level: process.env['LOG_LEVEL'] ?? 'info',
+  level: config.logLevel,
   serializers: {
     ticket: redactPii,
     req: (req: Record<string, unknown>) => redactPii(req),
