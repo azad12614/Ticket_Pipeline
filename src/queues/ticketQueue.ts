@@ -6,7 +6,10 @@ import {
   PurgeQueueCommand,
   ChangeMessageVisibilityCommand,
 } from '@aws-sdk/client-sqs';
+import { z } from 'zod';
 import { config } from '../lib/config.ts';
+
+const sqsMessageBodySchema = z.object({ ticketId: z.string() });
 
 const QUEUE_URL = config.sqs.queueUrl;
 
@@ -24,6 +27,7 @@ export async function enqueueTicket(ticketId: string): Promise<void> {
     new SendMessageCommand({
       QueueUrl: QUEUE_URL,
       MessageBody: JSON.stringify({ ticketId }),
+      // DelaySeconds: 30,
     }),
   );
 }
@@ -43,8 +47,8 @@ export async function receiveTickets(signal?: AbortSignal): Promise<SQSTicketMes
       signal ? { abortSignal: signal } : {},
     );
     return (response.Messages ?? []).map(msg => ({
-      ticketId: (JSON.parse(msg.Body!) as { ticketId: string }).ticketId,
-      receiptHandle: msg.ReceiptHandle!,
+      ticketId: sqsMessageBodySchema.parse(JSON.parse(msg.Body ?? '')).ticketId,
+      receiptHandle: msg.ReceiptHandle ?? '',
     }));
   } catch {
     if (signal?.aborted) return [];

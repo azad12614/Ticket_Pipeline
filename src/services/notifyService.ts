@@ -26,28 +26,28 @@ export function startNotifyService(io: Server, deps?: Partial<NotifyDeps>): void
 
   const client = createClient();
 
-  void (async () => {
+  async function onNotification(ticketId: string): Promise<void> {
+    try {
+      const event = await getLatestEvent(ticketId);
+      if (!event) return;
+      io.to(`ticket:${ticketId}`).emit('ticket:event', event);
+    } catch (err) {
+      logger.error({ err, ticketId }, 'notify emit failed');
+    }
+  }
+
+  async function connect(): Promise<void> {
     try {
       await client.connect();
       await client.query('LISTEN ticket_events');
       logger.info('notify service listening on ticket_events');
-
       client.on('notification', (msg) => {
-        const ticketId = msg.payload;
-        if (!ticketId) return;
-
-        void (async () => {
-          try {
-            const event = await getLatestEvent(ticketId);
-            if (!event) return;
-            io.to(`ticket:${ticketId}`).emit('ticket:event', event);
-          } catch (err) {
-            logger.error({ err, ticketId }, 'notify emit failed');
-          }
-        })();
+        if (msg.payload) void onNotification(msg.payload);
       });
     } catch (err) {
       logger.error({ err }, 'notify service connect failed');
     }
-  })();
+  }
+
+  void connect();
 }

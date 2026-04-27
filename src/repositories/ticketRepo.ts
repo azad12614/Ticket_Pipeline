@@ -116,19 +116,24 @@ export async function getTicketPhasesByTicketId(ticketId: string): Promise<Ticke
 }
 
 export async function getTicketWithPhasesById(id: string): Promise<TicketWithPhases | null> {
-  const ticket = await getTicketById(id);
-  if (!ticket) return null;
+  const result = await pool.query(
+    `SELECT t.*,
+      (SELECT COALESCE(json_agg(tp ORDER BY tp.phase), '[]'::json)
+       FROM ticket_phases tp WHERE tp.ticket_id = t.id) AS phases_data,
+      (SELECT COALESCE(json_agg(te ORDER BY te.created_at ASC), '[]'::json)
+       FROM ticket_events te WHERE te.ticket_id = t.id) AS events_data
+     FROM tickets t WHERE t.id = $1`,
+    [id],
+  );
 
-  const [phases, events] = await Promise.all([
-    getTicketPhasesByTicketId(id),
-    getEventsByTicketId(id),
-  ]);
+  const row = result.rows[0];
+  if (!row) return null;
 
-  return {
-    ...ticket,
-    phases: buildPhaseView(phases),
-    events,
-  };
+  const ticket = ticketSchema.parse(row);
+  const phases = (row.phases_data as unknown[]).map(p => ticketPhaseSchema.parse(p));
+  const events = (row.events_data as unknown[]).map(e => ticketEventSchema.parse(e));
+
+  return { ...ticket, phases: buildPhaseView(phases), events };
 }
 
 export async function updateTicketStatus(id: string, status: Ticket['status']): Promise<Ticket> {

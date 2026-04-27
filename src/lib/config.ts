@@ -17,6 +17,7 @@ const schema = z
       apiKey: z.string().optional(),
       config: z.string().optional(),
     }),
+    corsOrigin: z.string().default('*'),
   })
   .superRefine((data, ctx) => {
     if (data.nodeEnv !== 'test') {
@@ -43,4 +44,5 @@ export const config = schema.parse({
     apiKey: process.env['PORTKEY_API_KEY'],
     config: process.env['PORTKEY_CONFIG'],
   },
+  corsOrigin: process.env['CORS_ORIGIN'],
 });

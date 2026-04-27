@@ -8,6 +8,16 @@ import { triageOutputSchema, type TriageOutput } from '../schemas/triageSchema.t
 
 export type PortkeyClient = InstanceType<typeof PortkeyModule.Portkey>;
 
+type PortkeyResponse = { model?: string; getHeaders?: () => Record<string, string> | null | undefined };
+
+function resolveProvider(response: PortkeyResponse): string {
+  return (
+    response.model ??
+    response.getHeaders?.()?.['x-portkey-provider'] ??
+    'unknown'
+  );
+}
+
 type PhaseName = 'triage' | 'draft';
 type PhaseHandler = (ticketId: string) => Promise<unknown>;
 
@@ -120,7 +130,7 @@ export class AiService {
           },
           {
             role: 'user',
-            content: `Subject: ${ticket.subject}\n\nBody: ${ticket.body}`,
+            content: `<ticket>\n<subject>${ticket.subject}</subject>\n<body>${ticket.body}</body>\n</ticket>`,
           },
         ],
         tools: [TRIAGE_TOOL],
@@ -129,7 +139,7 @@ export class AiService {
       { timeout: 30_000 },
     );
 
-    logger.info({ ticketId, durationMs: Date.now() - start }, 'AI triage complete');
+    logger.info({ ticketId, durationMs: Date.now() - start, provider: resolveProvider(response) }, 'AI triage complete');
 
     if (!response.choices.length) {
       throw new FatalPhaseError('Empty choices in triage response');
@@ -183,7 +193,7 @@ export class AiService {
           },
           {
             role: 'user',
-            content: `Subject: ${ticket.subject}\n\nBody: ${ticket.body}\n\nTriage Analysis:\n${JSON.stringify(triageParsed.data, null, 2)}`,
+            content: `<ticket>\n<subject>${ticket.subject}</subject>\n<body>${ticket.body}</body>\n</ticket>\n\n<triage_analysis>\n${JSON.stringify(triageParsed.data, null, 2)}\n</triage_analysis>`,
           },
         ],
         tools: [DRAFT_TOOL],
@@ -192,7 +202,7 @@ export class AiService {
       { timeout: 30_000 },
     );
 
-    logger.info({ ticketId, durationMs: Date.now() - start }, 'AI draft complete');
+    logger.info({ ticketId, durationMs: Date.now() - start, provider: resolveProvider(response) }, 'AI draft complete');
 
     if (!response.choices.length) {
       throw new FatalPhaseError('Empty choices in draft response');

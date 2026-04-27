@@ -68,11 +68,13 @@ function isTerminalStatus(status: TicketStatus): boolean {
   return status === 'completed' || status === 'failed';
 }
 
-function findNextPhase(phases: TicketPhase[]): PhaseName | null {
+function findNextPhase(phases: TicketPhase[], ticketId: string): PhaseName | null {
   const triage = phases.find(phase => phase.phase === 'triage');
   const draft = phases.find(phase => phase.phase === 'draft');
 
-  if (!triage || !draft) return null;
+  if (!triage || !draft) {
+    throw new Error(`Missing phase rows for ticket ${ticketId} — expected triage and draft`);
+  }
 
   if (triage.status !== 'success') return 'triage';
   if (draft.status !== 'success') return 'draft';
@@ -97,7 +99,7 @@ async function handlePhaseError(
     if (failedPhase) {
       await deps.insertEventFn(ticketId, 'dlq_routed', phase, { attempt: failedPhase.attempts, reason: 'fatal_error' });
     }
-    await deps.changeMessageVisibilityFn(receiptHandle, 0);
+    await deps.deleteMessageFn(receiptHandle);
     return;
   }
 
@@ -107,14 +109,14 @@ async function handlePhaseError(
 
   if (!failedPhase) {
     await deps.updateTicketStatusFn(ticketId, 'failed');
-    await deps.changeMessageVisibilityFn(receiptHandle, 0);
+    await deps.deleteMessageFn(receiptHandle);
     return;
   }
 
   if (failedPhase.attempts >= 3) {
     await deps.failTicketFn(ticketId);
     await deps.insertEventFn(ticketId, 'dlq_routed', phase, { attempt: failedPhase.attempts, reason: 'max_attempts' });
-    await deps.changeMessageVisibilityFn(receiptHandle, 0);
+    await deps.deleteMessageFn(receiptHandle);
   } else {
     const backoff = backoffSeconds(failedPhase.attempts);
     await deps.transitionTicketStatusFn(ticketId, ['processing'], 'queued');
@@ -130,7 +132,7 @@ async function orchestratePhases(
 ): Promise<void> {
   while (true) {
     const phases = await deps.getTicketPhasesByTicketIdFn(ticketId);
-    const nextPhase = findNextPhase(phases);
+    const nextPhase = findNextPhase(phases, ticketId);
 
     if (!nextPhase) {
       await deps.completeTicketFn(ticketId);
