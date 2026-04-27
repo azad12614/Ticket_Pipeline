@@ -2,7 +2,6 @@ import { enqueueTicket } from '../queues/ticketQueue.ts';
 import {
   createTicket,
   getTicketWithPhasesById,
-  updateTicketStatus,
   type TicketWithPhases,
 } from '../repositories/ticketRepo.ts';
 import type { TicketInput, Ticket } from '../schemas/ticketSchema.ts';
@@ -38,6 +37,3 @@ export async function getTicket(id: string): Promise<TicketWithPhases> {
   return ticket;
 }
 
-export async function updateTicket(id: string, status: Ticket['status']): Promise<Ticket> {
-  return updateTicketStatus(id, status);
-}

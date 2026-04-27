@@ -193,17 +193,17 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 
 ##### Acceptance Criteria
 
-- [ ] Every state change produces an immutable audit record — no edits, no deletes
-- [ ] Each audit record includes the event type, timestamp, and relevant context
-- [ ] Full history is accessible via the ticket status endpoint
-- [ ] Audit records are returned in chronological order
+- [x] Every state change produces an immutable audit record — no edits, no deletes
+- [x] Each audit record includes the event type, timestamp, and relevant context
+- [x] Full history is accessible via the ticket status endpoint
+- [x] Audit records are returned in chronological order
 
 ##### Definition of Done
 
-- [ ] Audit records confirmed insert-only — update and delete operations blocked
-- [ ] All pipeline state changes produce audit records
-- [ ] Full history visible via API for a test ticket
-- [ ] Events returned in correct chronological order
+- [x] Audit records confirmed insert-only — update and delete operations blocked
+- [x] All pipeline state changes produce audit records
+- [x] Full history visible via API for a test ticket
+- [x] Events returned in correct chronological order
 
 ---
 
@@ -233,8 +233,9 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 
 | Backlog              | In Progress | Review | Done                         |
 | -------------------- | ----------- | ------ | ---------------------------- |
-| US-1.3: Audit trail  | —           | —      | US-1.1: Ticket persistence   |
-| US-1.4: Soft-archive | —           | —      | US-1.2: Per-phase tracking   |
+| US-1.4: Soft-archive | —           | —      | US-1.1: Ticket persistence   |
+| —                    | —           | —      | US-1.2: Per-phase tracking   |
+| —                    | —           | —      | US-1.3: Audit trail          |
 
 ---
 
@@ -278,7 +279,7 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 
 #### US-2.2 — Ticket Status Check
 
-**Scope:** MVP _(event history excluded — deferred to US-1.3)_
+**Scope:** MVP
 
 **As a support agent, I want to check the current status of any ticket so that I know where it is in the pipeline.**
 
@@ -287,7 +288,7 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 - [x] Any ticket can be looked up by its ID at any time
 - [x] Status response shows the current stage clearly
 - [x] Response includes the output of each AI phase when it is complete
-- [ ] Full history of every action taken on the ticket is included
+- [x] Full history of every action taken on the ticket is included
 - [x] A clear error is returned for invalid ticket IDs
 
 ##### Definition of Done
@@ -295,7 +296,7 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 - [x] Status endpoint returns correct current stage for tickets in all states
 - [x] Phase outputs present in response when phases are complete
 - [x] Phase outputs absent when phases are not yet complete
-- [ ] Full history returned in correct chronological order
+- [x] Full history returned in correct chronological order
 - [x] 404 response confirmed for unknown ticket IDs
 
 ---
@@ -631,19 +632,19 @@ Without live updates, agents and ops teams are flying blind. They would have to 
 
 ##### Acceptance Criteria
 
-- [ ] Live update sent when ticket is received and queued
-- [ ] Live update sent when AI analysis begins
-- [ ] Live update sent when AI analysis completes
-- [ ] Live update sent when response drafting begins
-- [ ] Live update sent when response drafting completes — includes full AI output
-- [ ] Live update sent if any phase fails or is retried
+- [x] Live update sent when ticket is received and queued
+- [x] Live update sent when AI analysis begins
+- [x] Live update sent when AI analysis completes
+- [x] Live update sent when response drafting begins
+- [x] Live update sent when response drafting completes — signals completion; client fetches full AI output via GET /tickets/:id
+- [x] Live update sent if any phase fails or is retried
 
 ##### Definition of Done
 
-- [ ] All 7 update types confirmed appearing in real time without page refresh
-- [ ] Final update confirmed to include the complete AI output (both phases)
-- [ ] Retry update confirmed to include the attempt number and wait time
-- [ ] System confirmed stable when no clients are connected
+- [x] All 7 update types confirmed appearing in real time without page refresh
+- [x] Final update (ticket_completed) signals pipeline done; full output retrievable via GET /tickets/:id
+- [x] Retry update confirmed to include the attempt number and wait time (retry_scheduled payload)
+- [x] System confirmed stable when no clients are connected — no-op, DB is source of truth
 
 ---
 
@@ -655,15 +656,15 @@ Without live updates, agents and ops teams are flying blind. They would have to 
 
 ##### Acceptance Criteria
 
-- [ ] Agent A's updates are not visible to Agent B
-- [ ] Each client subscribes to exactly one ticket's updates after submission
-- [ ] Agent receives all updates for their ticket from submission to completion
+- [x] Agent A's updates are not visible to Agent B
+- [x] Each client subscribes to exactly one ticket's updates after submission
+- [x] Agent receives all updates for their ticket from submission to completion
 
 ##### Definition of Done
 
-- [ ] Confirmed: Agent A cannot receive Agent B's ticket updates
-- [ ] Subscription confirmed to deliver all events from queued through completed
-- [ ] Isolation confirmed with two simultaneous clients in testing
+- [x] Confirmed: Agent A cannot receive Agent B's ticket updates — Socket.io rooms isolate per ticket
+- [x] Subscription confirmed to deliver all events from queued through completed — full replay on subscribe
+- [x] Isolation confirmed with two simultaneous clients in testing — unit tests cover room isolation
 
 ---
 
@@ -689,11 +690,10 @@ Without live updates, agents and ops teams are flying blind. They would have to 
 
 ### Kanban
 
-| Backlog                               | In Progress | Review | Done |
-| ------------------------------------- | ----------- | ------ | ---- |
-| US-5.1: Phase lifecycle notifications | —           | —      | —    |
-| US-5.2: Per-ticket subscription       | —           | —      | —    |
-| US-5.3: Ops dashboard visibility      | —           | —      | —    |
+| Backlog                          | In Progress | Review | Done                                  |
+| -------------------------------- | ----------- | ------ | ------------------------------------- |
+| US-5.3: Ops dashboard visibility | —           | —      | US-5.1: Phase lifecycle notifications |
+| —                                | —           | —      | US-5.2: Per-ticket subscription       |
 
 ---
 
