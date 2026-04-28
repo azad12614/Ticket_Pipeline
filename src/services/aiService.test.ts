@@ -74,6 +74,7 @@ function makeFakeRepo(): ITicketRepo {
     failTicket: vi.fn(),
     insertEvent: vi.fn(),
     getEventsByTicketId: vi.fn(),
+    getLatestEventByTicketId: vi.fn(),
   };
 }
 
