@@ -56,6 +56,7 @@ export type ITicketRepo = {
     payload: unknown,
   ): Promise<void>;
   getEventsByTicketId(ticketId: string): Promise<TicketEvent[]>;
+  getLatestEventByTicketId(ticketId: string): Promise<TicketEvent | null>;
 };
 
 function parseOrThrow<T>(schema: z.ZodType<T>, data: unknown, label: string): T {
@@ -131,6 +132,15 @@ export class PostgresTicketRepo implements ITicketRepo {
       [ticketId],
     );
     return result.rows.map(row => parseOrThrow(ticketEventSchema, row, 'getEventsByTicketId'));
+  }
+
+  async getLatestEventByTicketId(ticketId: string): Promise<TicketEvent | null> {
+    const result = await this.db.query(
+      'SELECT * FROM ticket_events WHERE ticket_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1',
+      [ticketId],
+    );
+    if (!result.rows[0]) return null;
+    return parseOrThrow(ticketEventSchema, result.rows[0], 'getLatestEventByTicketId');
   }
 
   async getAllTickets(): Promise<Pick<Ticket, 'id' | 'status' | 'created_at'>[]> {
