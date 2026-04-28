@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { createServer } from 'http';
 import { config } from './lib/config.ts';
 import { createApp } from './app.ts';

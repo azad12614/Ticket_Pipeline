@@ -2,10 +2,11 @@
 import { io } from 'socket.io-client';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import { z } from 'zod';
 
 const BASE_URL = process.env.API_URL ?? 'http://localhost:3000';
 
-async function prompt(question) {
+async function prompt(question: string) {
   const rl = readline.createInterface({ input, output });
   const answer = await rl.question(question);
   rl.close();
@@ -32,8 +33,13 @@ if (!res.ok) {
   process.exit(1);
 }
 
-const ticket = await res.json();
-const id = ticket.ticketId;
+const TicketResponse = z.object({ ticketId: z.string() });
+const parsed = TicketResponse.safeParse(await res.json());
+if (!parsed.success) {
+  console.error('unexpected response shape', parsed.error.issues);
+  process.exit(1);
+}
+const id = parsed.data.ticketId;
 console.log(`Ticket created: ${id}`);
 console.log('Watching events (ctrl+c to stop)...\n');
 
