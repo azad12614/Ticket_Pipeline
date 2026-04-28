@@ -22,7 +22,7 @@ $AWS sqs create-queue \
   --queue-name "$QUEUE_NAME" \
   --attributes "{
     \"VisibilityTimeout\": \"300\",
-    \"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"10\\\"}\"
+    \"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"
   }"
 
 echo "Done. Queue URL: $ENDPOINT/000000000000/$QUEUE_NAME"
