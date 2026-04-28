@@ -66,7 +66,11 @@ function parseOrThrow<T>(schema: z.ZodType<T>, data: unknown, label: string): T 
 }
 
 export class PostgresTicketRepo implements ITicketRepo {
-  constructor(private readonly db: Pool) {}
+  private readonly db: Pool;
+
+  constructor(db: Pool) {
+    this.db = db;
+  }
 
   private async withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.db.connect();
