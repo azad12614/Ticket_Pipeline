@@ -38,17 +38,17 @@ POST /tickets
 
 ## Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Runtime | Node.js + TypeScript (ESM) |
-| HTTP | Express 5 |
-| Database | PostgreSQL 16 |
-| Queue | AWS SQS (LocalStack in dev) |
+| Layer      | Technology                                     |
+| ---------- | ---------------------------------------------- |
+| Runtime    | Node.js + TypeScript (ESM)                     |
+| HTTP       | Express 5                                      |
+| Database   | PostgreSQL 16                                  |
+| Queue      | AWS SQS (LocalStack in dev)                    |
 | AI Gateway | Portkey (Anthropic → OpenAI → Google fallback) |
-| Real-time | Socket.io + PG LISTEN/NOTIFY |
-| Validation | Zod |
-| Logging | Pino |
-| Tests | Vitest |
+| Real-time  | Socket.io + PG LISTEN/NOTIFY                   |
+| Validation | Zod                                            |
+| Logging    | Pino                                           |
+| Tests      | Vitest                                         |
 
 ## Project Structure
 
@@ -97,7 +97,7 @@ npm install
 cp .env.example .env
 ```
 
-`.env` reference:
+.env reference:
 
 ```
 DATABASE_URL=postgresql://ticketuser:ticketpass@localhost:5432/tickets
@@ -105,9 +105,12 @@ PORT=3000
 LOG_LEVEL=info
 NODE_ENV=development
 
+# AWS / SQS
+# Set your AWS credentials here. For LocalStack development you can use the
+# LocalStack defaults (e.g. "test"), but do not commit real credentials.
 AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=test
-AWS_SECRET_ACCESS_KEY=test
+AWS_ACCESS_KEY_ID=<your-aws-access-key-id>
+AWS_SECRET_ACCESS_KEY=<your-aws-secret-access-key>
 SQS_ENDPOINT=http://localhost:4566
 SQS_QUEUE_URL=http://localhost:4566/000000000000/tickets
 
@@ -186,11 +189,13 @@ npm test
 Submit a ticket for processing. Returns `202` immediately — processing is async.
 
 **Request:**
+
 ```json
 { "subject": "string", "body": "string" }
 ```
 
 **Response `202`:**
+
 ```json
 { "id": "uuid", "status": "queued", "createdAt": "ISO8601" }
 ```
@@ -200,6 +205,7 @@ Submit a ticket for processing. Returns `202` immediately — processing is asyn
 Fetch ticket status and AI output.
 
 **Response `200`:**
+
 ```json
 {
   "id": "uuid",

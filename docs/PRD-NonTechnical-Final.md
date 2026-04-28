@@ -39,6 +39,8 @@ The system works silently in the background, never making the customer wait, and
 
 ---
 
+**Update (2026-04-28):** Operational and infra updates implemented: SQS RedrivePolicy set to 3, an operator `POST /tickets/retry/:ticketId` endpoint allows manual requeue of DLQ-routed tickets, and a DLQ consumer stub exists for optional automatic replay. See Epic 6 for recovery details.
+
 ## 2. Problem Statement
 
 ### Today's Reality
@@ -231,11 +233,11 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 
 ### Kanban
 
-| Backlog              | In Progress | Review | Done                         |
-| -------------------- | ----------- | ------ | ---------------------------- |
-| US-1.4: Soft-archive | —           | —      | US-1.1: Ticket persistence   |
-| —                    | —           | —      | US-1.2: Per-phase tracking   |
-| —                    | —           | —      | US-1.3: Audit trail          |
+| Backlog              | In Progress | Review | Done                       |
+| -------------------- | ----------- | ------ | -------------------------- |
+| US-1.4: Soft-archive | —           | —      | US-1.1: Ticket persistence |
+| —                    | —           | —      | US-1.2: Per-phase tracking |
+| —                    | —           | —      | US-1.3: Audit trail        |
 
 ---
 
@@ -331,17 +333,21 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 
 ##### Acceptance Criteria
 
-- [ ] Any ticket in a failed state can be manually re-queued for processing
-- [ ] Only the failed step is retried — completed steps are not repeated
-- [ ] Retry is rejected with a clear error if the ticket is not in a failed state
-- [ ] Ticket status updates to reflect that processing has resumed
+##### Acceptance Criteria
+
+- [x] Any ticket in a failed state can be manually re-queued for processing
+- [x] Only the failed step is retried — completed steps are not repeated
+- [x] Retry is rejected with a clear error if the ticket is not in a failed state
+- [x] Ticket status updates to reflect that processing has resumed
 
 ##### Definition of Done
 
-- [ ] Retry confirmed to re-queue only the failed phase — completed phase untouched
-- [ ] Retry confirmed rejected for tickets not in failed state
-- [ ] Ticket status updates to queued after successful retry request
-- [ ] Retry tested on a ticket with Phase 1 complete and Phase 2 failed — only Phase 2 retried
+##### Definition of Done
+
+- [x] Retry confirmed to re-queue only the failed phase — completed phase untouched
+- [x] Retry confirmed rejected for tickets not in failed state
+- [x] Ticket status updates to queued after successful retry request
+- [x] Retry tested on a ticket with Phase 1 complete and Phase 2 failed — only Phase 2 retried
 
 ---
 
@@ -350,7 +356,8 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 | Backlog                         | In Progress | Review | Done                              |
 | ------------------------------- | ----------- | ------ | --------------------------------- |
 | US-2.3: Ticket list & filtering | —           | —      | US-2.1: Immediate acknowledgement |
-| US-2.4: Manual retry            | —           | —      | US-2.2: Ticket status check       |
+|                                 |             |        | US-2.2: Ticket status check       |
+|                                 |             |        | US-2.4: Manual retry              |
 
 ---
 

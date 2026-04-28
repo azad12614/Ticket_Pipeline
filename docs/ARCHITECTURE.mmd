@@ -1,0 +1,108 @@
+flowchart TB
+    subgraph Client["Client Layer"]
+        C[Client App]
+    end
+
+    subgraph Ops["Ops Interface"]
+        MR[Manual Retry — Ops UI Inspect & Requeue]
+    end
+
+    subgraph API["Express API Layer (src/)"]
+        R[Routes POST /tickets POST /tickets/retry/:ticketId GET /tickets GET /tickets/:id]
+        SH[Startup checks DB & SQS]
+        Ctrl[Controllers]
+        SV[Services Ticket · AI · Notify]
+    end
+
+    subgraph DB["PostgreSQL"]
+        T[tickets]
+        TP[ticket_phases]
+        TE[ticket_events]
+        TR[(Trigger notify_ticket_event)]
+    end
+
+    subgraph Queue["AWS SQS (LocalStack)"]
+        MQ[Main Queue ticket-processing-queue Redrive: 3]
+        DLQ[Dead-letter Queue ticket-processing-dlq]
+    end
+
+    subgraph Worker["SQS Worker (src/workers/)"]
+        W[Worker Long-poll consumer]
+        PO[Phase Orchestrator Triage → Draft]
+        RT[Retry Backoff exp+jitter]
+    end
+
+    subgraph AI["AI Gateway (Portkey)"]
+        P[Portkey Gateway Returns AI result to orchestrator]
+        D1[Groq Deepseek Primary]
+        D2[Groq Llamma Backup]
+        G2[Gemini Backup]
+    end
+
+    subgraph RealTime["Socket.io Layer"]
+        IO[Socket.io Server]
+        NS[notifyService LISTEN -> pg_notify Realtime events]
+        R1[Socket.io Room ticket id]
+    end
+
+    C -->|HTTP| R
+    R --> Ctrl
+    Ctrl --> SV
+    SV -->|INSERT| T
+    SV -->|INSERT| TP
+    SV -->|INSERT| TE
+    TE -->|TRIGGER| TR
+    TR -->|pg_notify| NS
+    NS -->|io.to| R1
+    R1 -->|WebSocket| C
+
+    SV -->|SQS Send| MQ
+    MQ -->|Long-poll| W
+    W --> PO
+    PO -->|AI Call| P
+    P -->|Provider Chain| D1
+    D1 -->|Fail| P
+    P -->|Fail| D2
+    D2 -->|Fail| P
+    P -->|Fail| G2
+
+    PO -->|Read| TP
+    PO -->|Update| TP
+    PO -->|Write| TE
+
+    PO -->|Retry| RT
+    RT -->|Visibility Timeout| MQ
+    MQ -->|3 Fails| DLQ
+    DLQ --> DC[DLQ Consumer - runs continuously or on-demand]
+    DC -->|Write dlq_routed| TE
+    DC -->|Optional requeue| MQ
+    MR -->|Requeue via API| R
+    R -->|Trigger DLQ replay - optional| DC
+
+    style R1 fill:#e1f5fe
+    style MQ fill:#fff3e0
+    style DLQ fill:#ffcdd2
+    style P fill:#e8f5e9
+    style T fill:#f3e5f5
+    style TP fill:#f3e5f5
+    style TE fill:#f3e5f5
+
+    style C fill:#ffffff,color:#000,stroke:#333
+    style R fill:#ffffff,color:#000,stroke:#333
+    style Ctrl fill:#ffffff,color:#000,stroke:#333
+    style SV fill:#ffffff,color:#000,stroke:#333
+    style W fill:#ffffff,color:#000,stroke:#333
+    style PO fill:#ffffff,color:#000,stroke:#333
+    style RT fill:#ffffff,color:#000,stroke:#333
+    
+    style G2 fill:#ffffff,color:#000,stroke:#333
+    style IO fill:#ffffff,color:#000,stroke:#333
+    style NS fill:#ffffff,color:#000,stroke:#333
+
+    style R1 fill:#e1f5fe,color:#000,stroke:#333
+    style MQ fill:#fff3e0,color:#000,stroke:#333
+    style DLQ fill:#ffcdd2,color:#000,stroke:#333
+    style P fill:#e8f5e9,color:#000,stroke:#333
+    style T fill:#f3e5f5,color:#000,stroke:#333
+    style TP fill:#f3e5f5,color:#000,stroke:#333
+    style TE fill:#f3e5f5,color:#000,stroke:#333
