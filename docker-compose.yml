@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:16
+    container_name: tickets-db
+    environment:
+      POSTGRES_USER: ticketuser
+      POSTGRES_PASSWORD: ticketpass
+      POSTGRES_DB: tickets
+    ports:
+      - '5432:5432'
+    volumes:
+      - tickets-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ticketuser -d tickets']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack
+    container_name: tickets-localstack
+    environment:
+      - SERVICES=sqs
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN}
+    ports:
+      - '4566:4566'
+    volumes:
+      - tickets-localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ['CMD-SHELL', 'awslocal sqs list-queues']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  localstack-setup:
+    image: amazon/aws-cli
+    container_name: tickets-localstack-setup
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_REGION:-us-east-1}
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        ENDPOINT=http://localstack:4566
+        DLQ_URL=$$(aws --endpoint-url=$$ENDPOINT sqs create-queue --queue-name tickets-dlq --query 'QueueUrl' --output text)
+        DLQ_ARN=$$(aws --endpoint-url=$$ENDPOINT sqs get-queue-attributes --queue-url $$DLQ_URL --attribute-names QueueArn --query 'Attributes.QueueArn' --output text)
+        aws --endpoint-url=$$ENDPOINT sqs create-queue \
+          --queue-name tickets \
+          --attributes "{\"VisibilityTimeout\":\"300\",\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$$DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}"
+        echo "Done."
+    restart: on-failure
+
+volumes:
+  tickets-db-data:
+  tickets-localstack-data:

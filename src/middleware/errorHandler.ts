@@ -1,4 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
+import { config } from '../lib/config.ts';
+import logger from '../lib/logger.ts';
 
 interface AppError {
   code: number;
@@ -27,6 +29,9 @@ export function errorHandler(
     return;
   }
 
-  const message = err instanceof Error ? err.message : 'Internal server error';
+  logger.error({ err }, 'Unhandled error');
+  const message = config.nodeEnv === 'production'
+    ? 'Internal server error'
+    : err instanceof Error ? err.message : 'Internal server error';
   res.status(500).json({ error: 'INTERNAL_ERROR', message, code: 500 });
 }

@@ -1,6 +1,6 @@
 import { Server } from 'socket.io';
 import type { Server as HttpServer } from 'http';
-import { getEventsByTicketId as repoGetEvents } from '../repositories/ticketRepo.ts';
+import { config } from './config.ts';
 import type { TicketEvent } from '../schemas/eventSchema.ts';
 import logger from './logger.ts';
 
@@ -8,8 +8,8 @@ export type IoDeps = {
   getEventsByTicketId: (ticketId: string) => Promise<TicketEvent[]>;
 };
 
-export function createIo(httpServer: HttpServer, deps: IoDeps = { getEventsByTicketId: repoGetEvents }): Server {
-  const io = new Server(httpServer, { cors: { origin: '*' } });
+export function createIo(httpServer: HttpServer, deps: IoDeps): Server {
+  const io = new Server(httpServer, { cors: { origin: config.corsOrigin } });
 
   io.on('connection', (socket) => {
     socket.on('subscribe', async (ticketId: string) => {

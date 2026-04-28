@@ -19,6 +19,7 @@ type PgClientStub = {
   connect: ReturnType<typeof vi.fn>;
   query: ReturnType<typeof vi.fn>;
   on: ReturnType<typeof vi.fn>;
+  end: ReturnType<typeof vi.fn>;
   triggerNotification: (ticketId: string) => void;
 };
 
@@ -27,6 +28,7 @@ function makePgClient(): PgClientStub {
   return {
     connect: vi.fn().mockResolvedValue(undefined),
     query: vi.fn().mockResolvedValue(undefined),
+    end: vi.fn().mockResolvedValue(undefined),
     on: vi.fn().mockImplementation((event: string, handler: NotifHandler) => {
       if (event === 'notification') notifHandler = handler;
     }),
@@ -57,8 +59,8 @@ describe('notifyService', () => {
     getLatestEventByTicketId = vi.fn();
   });
 
-  function start(): void {
-    startNotifyService(io as never, {
+  function start() {
+    return startNotifyService(io as never, {
       getLatestEventByTicketId,
       createClient: () => pgClient as never,
     });
@@ -138,5 +140,14 @@ describe('notifyService', () => {
 
     expect(io.to).toHaveBeenCalledWith(`ticket:${TICKET_ID}`);
     expect(io.to).toHaveBeenCalledWith(`ticket:${OTHER}`);
+  });
+
+  it('stop() calls client.end() to close the connection', async () => {
+    const handle = start();
+    await flushAsync();
+
+    await handle.stop();
+
+    expect(pgClient.end).toHaveBeenCalled();
   });
 });

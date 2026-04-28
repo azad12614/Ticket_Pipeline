@@ -60,6 +60,7 @@ function draftResponse(args: object) {
 
 function makeFakeRepo(): ITicketRepo {
   return {
+    getAllTickets: vi.fn(),
     createTicket: vi.fn(),
     getTicketById: vi.fn(),
     getTicketPhasesByTicketId: vi.fn(),
@@ -73,6 +74,7 @@ function makeFakeRepo(): ITicketRepo {
     failTicket: vi.fn(),
     insertEvent: vi.fn(),
     getEventsByTicketId: vi.fn(),
+    getLatestEventByTicketId: vi.fn(),
   };
 }
 
@@ -97,7 +99,7 @@ describe('AiService.triageTicket', () => {
 
     const result = await service.triageTicket(TICKET_ID);
 
-    expect(result).toEqual(VALID_TRIAGE_ARGS);
+    expect(result).toMatchObject({ output: VALID_TRIAGE_ARGS });
   });
 
   it('throws FatalPhaseError when ticket not found', async () => {
@@ -169,7 +171,7 @@ describe('AiService.draftResolution', () => {
 
     const result = await service.draftResolution(TICKET_ID);
 
-    expect(result).toEqual(VALID_DRAFT_ARGS);
+    expect(result).toMatchObject({ output: VALID_DRAFT_ARGS });
   });
 
   it('throws FatalPhaseError when ticket not found', async () => {
@@ -238,7 +240,7 @@ describe('AiService.runPhase', () => {
 
     const result = await service.runPhase(TICKET_ID, 'triage');
 
-    expect(result).toEqual(VALID_TRIAGE_ARGS);
+    expect(result).toMatchObject({ output: VALID_TRIAGE_ARGS });
   });
 
   it("routes 'draft' through draftResolution", async () => {
@@ -248,7 +250,7 @@ describe('AiService.runPhase', () => {
 
     const result = await service.runPhase(TICKET_ID, 'draft');
 
-    expect(result).toEqual(VALID_DRAFT_ARGS);
+    expect(result).toMatchObject({ output: VALID_DRAFT_ARGS });
   });
 
   it('throws for unknown phase', async () => {

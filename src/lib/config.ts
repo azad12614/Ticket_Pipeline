@@ -10,22 +10,36 @@ const schema = z
       queueUrl: z.string().min(1),
       endpoint: z.string().optional(),
       region: z.string().default('us-east-1'),
-      accessKeyId: z.string().default('test'),
-      secretAccessKey: z.string().default('test'),
+      accessKeyId: z.string().default(''),
+      secretAccessKey: z.string().default(''),
     }),
     portkey: z.object({
       apiKey: z.string().optional(),
       config: z.string().optional(),
     }),
+    corsOrigin: z.string().default('*'),
   })
   .superRefine((data, ctx) => {
     if (data.nodeEnv !== 'test') {
       if (!data.databaseUrl)
-        ctx.addIssue({ code: 'custom', message: 'DATABASE_URL is required', path: ['databaseUrl'] });
+        ctx.addIssue({
+          code: 'custom',
+          message: 'DATABASE_URL is required',
+          path: ['databaseUrl'],
+        });
       if (!data.portkey.apiKey)
-        ctx.addIssue({ code: 'custom', message: 'PORTKEY_API_KEY is required', path: ['portkey', 'apiKey'] });
+        ctx.addIssue({
+          code: 'custom',
+          message: 'PORTKEY_API_KEY is required',
+          path: ['portkey', 'apiKey'],
+        });
     }
-  });
+  })
+  .transform(data => ({
+    ...data,
+    databaseUrl: data.databaseUrl ?? '',
+    portkey: { ...data.portkey, apiKey: data.portkey.apiKey ?? '' },
+  }));
 
 export const config = schema.parse({
   nodeEnv: process.env['NODE_ENV'],
@@ -43,4 +57,5 @@ export const config = schema.parse({
     apiKey: process.env['PORTKEY_API_KEY'],
     config: process.env['PORTKEY_CONFIG'],
   },
+  corsOrigin: process.env['CORS_ORIGIN'],
 });

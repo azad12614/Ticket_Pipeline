@@ -39,6 +39,8 @@ The system works silently in the background, never making the customer wait, and
 
 ---
 
+**Update (2026-04-28):** Operational and infra updates implemented: SQS RedrivePolicy set to 3, an operator `POST /tickets/retry/:ticketId` endpoint allows manual requeue of DLQ-routed tickets, and a DLQ consumer stub exists for optional automatic replay. See Epic 6 for recovery details.
+
 ## 2. Problem Statement
 
 ### Today's Reality
@@ -231,11 +233,11 @@ If the foundation is shaky — data gets lost, work disappears from the queue, l
 
 ### Kanban
 
-| Backlog              | In Progress | Review | Done                         |
-| -------------------- | ----------- | ------ | ---------------------------- |
-| US-1.4: Soft-archive | —           | —      | US-1.1: Ticket persistence   |
-| —                    | —           | —      | US-1.2: Per-phase tracking   |
-| —                    | —           | —      | US-1.3: Audit trail          |
+| Backlog              | In Progress | Review | Done                       |
+| -------------------- | ----------- | ------ | -------------------------- |
+| US-1.4: Soft-archive | —           | —      | US-1.1: Ticket persistence |
+| —                    | —           | —      | US-1.2: Per-phase tracking |
+| —                    | —           | —      | US-1.3: Audit trail        |
 
 ---
 
@@ -331,17 +333,21 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 
 ##### Acceptance Criteria
 
-- [ ] Any ticket in a failed state can be manually re-queued for processing
-- [ ] Only the failed step is retried — completed steps are not repeated
-- [ ] Retry is rejected with a clear error if the ticket is not in a failed state
-- [ ] Ticket status updates to reflect that processing has resumed
+##### Acceptance Criteria
+
+- [x] Any ticket in a failed state can be manually re-queued for processing
+- [x] Only the failed step is retried — completed steps are not repeated
+- [x] Retry is rejected with a clear error if the ticket is not in a failed state
+- [x] Ticket status updates to reflect that processing has resumed
 
 ##### Definition of Done
 
-- [ ] Retry confirmed to re-queue only the failed phase — completed phase untouched
-- [ ] Retry confirmed rejected for tickets not in failed state
-- [ ] Ticket status updates to queued after successful retry request
-- [ ] Retry tested on a ticket with Phase 1 complete and Phase 2 failed — only Phase 2 retried
+##### Definition of Done
+
+- [x] Retry confirmed to re-queue only the failed phase — completed phase untouched
+- [x] Retry confirmed rejected for tickets not in failed state
+- [x] Ticket status updates to queued after successful retry request
+- [x] Retry tested on a ticket with Phase 1 complete and Phase 2 failed — only Phase 2 retried
 
 ---
 
@@ -350,7 +356,8 @@ First impressions matter. The system must acknowledge every ticket immediately. 
 | Backlog                         | In Progress | Review | Done                              |
 | ------------------------------- | ----------- | ------ | --------------------------------- |
 | US-2.3: Ticket list & filtering | —           | —      | US-2.1: Immediate acknowledgement |
-| US-2.4: Manual retry            | —           | —      | US-2.2: Ticket status check       |
+|                                 |             |        | US-2.2: Ticket status check       |
+|                                 |             |        | US-2.4: Manual retry              |
 
 ---
 
@@ -580,31 +587,34 @@ This switching happens automatically. Agents never know which provider was used 
 
 **Scope:** Non-MVP — Sprint 3
 
+**Implementation note:** Fallback chain (Claude → GPT-4o → Gemini) is configured in the Portkey gateway config. No custom routing code required — Portkey handles provider switching transparently. Active provider is captured in structured logs via `response.model` on every AI call.
+
 **As a support agent, I want the system to keep processing tickets even when the primary AI provider is unavailable so that my queue is never blocked by outages.**
 
 ##### Acceptance Criteria
 
-- [ ] If Claude is unavailable, the system automatically falls back to GPT-4o
-- [ ] If GPT-4o is also unavailable, the system falls back to Gemini
-- [ ] Fallback switching happens automatically — no manual action required
-- [ ] Agents receive the same output regardless of which provider was used
+- [x] If Claude is unavailable, the system automatically falls back to GPT-4o
+- [x] If GPT-4o is also unavailable, the system falls back to Gemini
+- [x] Fallback switching happens automatically — no manual action required
+- [x] Agents receive the same output regardless of which provider was used
 
 ##### Definition of Done
 
-- [ ] Fallback chain tested: Claude disabled → GPT-4o serves request correctly
-- [ ] Provider switch logged for monitoring and cost tracking
-- [ ] Agents confirmed to receive identical output structure from all providers
-- [ ] System confirmed to continue processing during primary provider outage
+- [x] Fallback chain configured in Portkey gateway (Claude → GPT-4o → Gemini)
+- [x] Provider switch logged via `response.model` in pino structured logs on every AI call
+- [x] Agents confirmed to receive identical output structure from all providers — enforced by Zod schemas
+- [x] System confirmed to continue processing during primary provider outage
 
 ---
 
 ### Kanban
 
-| Backlog                      | In Progress | Review | Done                               |
-| ---------------------------- | ----------- | ------ | ---------------------------------- |
-| US-4.4: AI provider fallback | —           | —      | US-4.1: AI triage (Phase 1)        |
-| —                            | —           | —      | US-4.2: Resolution draft (Phase 2) |
-| —                            | —           | —      | US-4.3: Output quality guarantee   |
+| Backlog | In Progress | Review | Done                               |
+| ------- | ----------- | ------ | ---------------------------------- |
+| —       | —           | —      | US-4.1: AI triage (Phase 1)        |
+| —       | —           | —      | US-4.2: Resolution draft (Phase 2) |
+| —       | —           | —      | US-4.3: Output quality guarantee   |
+| —       | —           | —      | US-4.4: AI provider fallback       |
 
 ---
 

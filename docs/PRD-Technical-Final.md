@@ -26,6 +26,7 @@
    - [3.8 Socket.io Room Strategy](#38-socketio-room-strategy)
    - [3.9 API Contract](#39-api-contract)
    - [3.10 Environment Variables](#310-environment-variables)
+   - [3.11 TypeScript Conventions](#311-typescript-conventions)
 4. [Build Order](#4-build-order)
 5. [Epic 1 — Project Foundation & Infrastructure](#epic-1--project-foundation--infrastructure)
 6. [Epic 2 — REST API Layer](#epic-2--rest-api-layer)
@@ -321,6 +322,17 @@ All configuration is externalized. No hardcoded values anywhere in the codebase.
 | `PORTKEY_CONFIG`    | Portkey config ID (fallback chain + model selection managed in Portkey dashboard) | `pc-...` |
 | `PORT`              | Express server port        | `3000`                                                       |
 | `LOG_LEVEL`         | Pino log level             | `info`                                                       |
+
+---
+
+### 3.11 TypeScript Conventions
+
+Four hard rules applied across all `.ts` files:
+
+- **No `as` type assertions** — Use Zod `safeParse`, type guards, or `satisfies` to narrow `unknown`. Unsafe casts hide runtime shape mismatches.
+- **`as const` instead of enums** — TypeScript enums emit runtime JS and have surprising semantics. `as const` objects are plain values with inferred literal types.
+- **Type aliases, not interfaces** — Use `type Foo = { ... }`. Interfaces allow declaration merging; aliases don't — prevents accidental augmentation.
+- **`unknown` not `any`** — `any` disables the type checker. `unknown` forces a narrowing step before use.
 
 ---
 
