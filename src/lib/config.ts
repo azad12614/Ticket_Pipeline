@@ -10,8 +10,8 @@ const schema = z
       queueUrl: z.string().min(1),
       endpoint: z.string().optional(),
       region: z.string().default('us-east-1'),
-      accessKeyId: z.string().default('test'),
-      secretAccessKey: z.string().default('test'),
+      accessKeyId: z.string().default(''),
+      secretAccessKey: z.string().default(''),
     }),
     portkey: z.object({
       apiKey: z.string().optional(),

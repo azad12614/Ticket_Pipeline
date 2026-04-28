@@ -12,7 +12,7 @@ import { config } from '../lib/config.ts';
 
 const sqsMessageBodySchema = z.object({ ticketId: z.string() });
 
-const QUEUE_URL = config.sqs.queueUrl;
+export const QUEUE_URL = config.sqs.queueUrl;
 
 export const sqsClient = new SQSClient({
   region: config.sqs.region,

@@ -190,7 +190,8 @@ export type WorkerHandle = {
 export function startTicketWorker(): WorkerHandle {
   const deps: WorkerDeps = {
     getTicketByIdFn: postgresTicketRepo.getTicketById.bind(postgresTicketRepo),
-    getTicketPhasesByTicketIdFn: postgresTicketRepo.getTicketPhasesByTicketId.bind(postgresTicketRepo),
+    getTicketPhasesByTicketIdFn:
+      postgresTicketRepo.getTicketPhasesByTicketId.bind(postgresTicketRepo),
     transitionTicketStatusFn: postgresTicketRepo.transitionTicketStatus.bind(postgresTicketRepo),
     updateTicketStatusFn: postgresTicketRepo.updateTicketStatus.bind(postgresTicketRepo),
     claimPhaseForProcessingFn: postgresTicketRepo.claimPhaseForProcessing.bind(postgresTicketRepo),
@@ -207,15 +208,21 @@ export function startTicketWorker(): WorkerHandle {
   const controller = new AbortController();
 
   const done = (async () => {
+    let errorCount = 0;
     while (!controller.signal.aborted) {
       try {
         const messages = await receiveTickets(controller.signal);
+        errorCount = 0;
         for (const { ticketId, receiptHandle } of messages) {
           await processTicketLifecycle(ticketId, receiptHandle, deps);
         }
       } catch (error) {
         if (controller.signal.aborted) break;
-        logger.error({ err: error }, 'Worker loop error');
+        errorCount++;
+        const jitter = Math.floor(Math.random() * 300);
+        const backoffMs = Math.min(1000 * Math.pow(2, Math.max(0, errorCount - 1)), 30000) + jitter;
+        logger.error({ err: error, backoffMs, errorCount }, 'Worker loop error — backing off');
+        await new Promise(r => setTimeout(r, backoffMs));
       }
     }
   })();
