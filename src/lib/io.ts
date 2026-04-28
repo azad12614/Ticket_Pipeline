@@ -1,7 +1,6 @@
 import { Server } from 'socket.io';
 import type { Server as HttpServer } from 'http';
 import { config } from './config.ts';
-import { postgresTicketRepo } from '../repositories/ticketRepo.ts';
 import type { TicketEvent } from '../schemas/eventSchema.ts';
 import logger from './logger.ts';
 
@@ -9,7 +8,7 @@ export type IoDeps = {
   getEventsByTicketId: (ticketId: string) => Promise<TicketEvent[]>;
 };
 
-export function createIo(httpServer: HttpServer, deps: IoDeps = { getEventsByTicketId: postgresTicketRepo.getEventsByTicketId.bind(postgresTicketRepo) }): Server {
+export function createIo(httpServer: HttpServer, deps: IoDeps): Server {
   const io = new Server(httpServer, { cors: { origin: config.corsOrigin } });
 
   io.on('connection', (socket) => {

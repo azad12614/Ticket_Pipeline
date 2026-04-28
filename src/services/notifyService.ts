@@ -1,8 +1,5 @@
 import pg from 'pg';
 import type { Server } from 'socket.io';
-import { config } from '../lib/config.ts';
-import { pool } from '../lib/db.ts';
-import { ticketEventSchema } from '../schemas/eventSchema.ts';
 import type { TicketEvent } from '../schemas/eventSchema.ts';
 import logger from '../lib/logger.ts';
 
@@ -17,31 +14,13 @@ export type NotifyHandle = {
   stop: () => Promise<void>;
 };
 
-async function defaultGetLatestEvent(ticketId: string): Promise<TicketEvent | null> {
-  const result = await pool.query(
-    'SELECT * FROM ticket_events WHERE ticket_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1',
-    [ticketId],
-  );
-  if (!result.rows[0]) return null;
-  const parsed = ticketEventSchema.safeParse(result.rows[0]);
-  if (!parsed.success) {
-    logger.error({ ticketId, issues: parsed.error.issues }, 'notify: event row failed validation');
-    return null;
-  }
-  return parsed.data;
-}
-
-export function startNotifyService(io: Server, deps?: Partial<NotifyDeps>): NotifyHandle {
-  const getLatestEvent = deps?.getLatestEventByTicketId ?? defaultGetLatestEvent;
-  const createClient =
-    deps?.createClient ?? (() => new pg.Client({ connectionString: config.databaseUrl }));
-
-  let client = createClient();
+export function startNotifyService(io: Server, deps: NotifyDeps): NotifyHandle {
+  let client = deps.createClient();
   let stopped = false;
 
   async function onNotification(ticketId: string): Promise<void> {
     try {
-      const event = await getLatestEvent(ticketId);
+      const event = await deps.getLatestEventByTicketId(ticketId);
       if (!event) return;
       io.to(`ticket:${ticketId}`).emit('ticket:event', event);
     } catch (err) {
@@ -75,7 +54,7 @@ export function startNotifyService(io: Server, deps?: Partial<NotifyDeps>): Noti
     } catch {
       // ignore cleanup errors
     }
-    client = createClient();
+    client = deps.createClient();
     setTimeout(() => void connect(), RECONNECT_DELAY_MS);
   }
 
