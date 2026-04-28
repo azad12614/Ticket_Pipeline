@@ -1,10 +1,5 @@
 import { enqueueTicket } from '../queues/ticketQueue.ts';
-import {
-  getAllTickets,
-  createTicket,
-  getTicketWithPhasesById,
-  type TicketWithPhases,
-} from '../repositories/ticketRepo.ts';
+import { postgresTicketRepo, type TicketWithPhases } from '../repositories/ticketRepo.ts';
 import type { TicketInput, Ticket } from '../schemas/ticketSchema.ts';
 
 export class NotFoundError extends Error {
@@ -24,7 +19,8 @@ export async function submitTicket(
   input: TicketInput,
   deps: SubmitTicketDeps = {},
 ): Promise<Ticket> {
-  const createTicketFn = deps.createTicketFn ?? createTicket;
+  const createTicketFn =
+    deps.createTicketFn ?? postgresTicketRepo.createTicket.bind(postgresTicketRepo);
   const enqueueTicketFn = deps.enqueueTicketFn ?? enqueueTicket;
 
   const ticket = await createTicketFn(input);
@@ -33,12 +29,11 @@ export async function submitTicket(
 }
 
 export async function listTickets(): Promise<Pick<Ticket, 'id' | 'status' | 'created_at'>[]> {
-  return getAllTickets();
+  return postgresTicketRepo.getAllTickets();
 }
 
 export async function getTicket(id: string): Promise<TicketWithPhases> {
-  const ticket = await getTicketWithPhasesById(id);
+  const ticket = await postgresTicketRepo.getTicketWithPhasesById(id);
   if (!ticket) throw new NotFoundError(id);
   return ticket;
 }
-

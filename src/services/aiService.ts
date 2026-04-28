@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import * as PortkeyModule from 'portkey-ai';
 import { config } from '../lib/config.ts';
 import { FatalPhaseError } from '../lib/errors.ts';
@@ -7,6 +8,10 @@ import { draftOutputSchema } from '../schemas/draftSchema.ts';
 import { triageOutputSchema } from '../schemas/triageSchema.ts';
 
 export type PortkeyClient = InstanceType<typeof PortkeyModule.Portkey>;
+
+type CreateParams = Parameters<PortkeyClient['chat']['completions']['create']>[0];
+type ChatMessages = NonNullable<CreateParams['messages']>;
+type ChatTool = NonNullable<CreateParams['tools']>[number];
 
 type PortkeyResponse = {
   model?: string;
@@ -24,14 +29,13 @@ export type PhaseResult = { output: unknown; durationMs: number; provider: strin
 type PhaseHandler = (ticketId: string) => Promise<PhaseResult>;
 
 export function createPortkeyClient(): PortkeyClient {
-  return new PortkeyModule.Portkey({
-    apiKey: config.portkey.apiKey!,
-    config: config.portkey.config,
-  });
+  const apiKey = config.portkey.apiKey;
+  if (!apiKey) throw new Error('PORTKEY_API_KEY is not configured');
+  return new PortkeyModule.Portkey({ apiKey, config: config.portkey.config });
 }
 
-const TRIAGE_TOOL = {
-  type: 'function' as const,
+const TRIAGE_TOOL: ChatTool = {
+  type: 'function',
   function: {
     name: 'triage_ticket',
     description: 'Analyze a support ticket and produce structured triage output.',
@@ -72,8 +76,8 @@ const TRIAGE_TOOL = {
   },
 };
 
-const DRAFT_TOOL = {
-  type: 'function' as const,
+const DRAFT_TOOL: ChatTool = {
+  type: 'function',
   function: {
     name: 'draft_resolution',
     description: 'Draft a resolution for a support ticket based on triage analysis.',
@@ -88,7 +92,7 @@ const DRAFT_TOOL = {
         internal_note: {
           type: 'string',
           description:
-            'Internal note for the agent referencing triage category, priority, and escalation status.',
+            'Internal note for the support agent: reasoning behind the draft, edge cases, handling nuances, or anything not captured in the structured triage fields. Do not repeat category, priority, or escalation — those are already stored.',
         },
         next_actions: {
           type: 'array',
@@ -117,57 +121,68 @@ export class AiService {
     } satisfies Record<PhaseName, PhaseHandler>;
   }
 
-  async triageTicket(ticketId: string): Promise<PhaseResult> {
-    const ticket = await this.repo.getTicketById(ticketId);
-    if (!ticket) throw new FatalPhaseError(`Ticket ${ticketId} not found`);
-
+  private async callPortkeyTool<T>(
+    messages: ChatMessages,
+    tool: ChatTool,
+    toolName: string,
+    schema: z.ZodType<T>,
+    label: string,
+  ): Promise<{ output: T; durationMs: number; provider: string }> {
     const start = Date.now();
-    logger.info({ ticketId }, 'AI triage started');
-
     const response = await this.portkey.chat.completions.create(
-      {
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a support ticket triage system. Analyze the ticket and call triage_ticket with structured output. Classify strictly from allowed enum values — do not invent categories. Summary must be one sentence, factual, under 300 characters.',
-          },
-          {
-            role: 'user',
-            content: `<ticket>\n<subject>${ticket.subject}</subject>\n<body>${ticket.body}</body>\n</ticket>`,
-          },
-        ],
-        tools: [TRIAGE_TOOL],
-        tool_choice: { type: 'function', function: { name: 'triage_ticket' } },
-      },
+      { messages, tools: [tool], tool_choice: { type: 'function', function: { name: toolName } } },
       { timeout: 30_000 },
     );
-
     const durationMs = Date.now() - start;
     const provider = resolveProvider(response);
-    logger.info({ ticketId, durationMs, provider }, 'AI triage complete');
 
     if (!response.choices.length) {
-      throw new FatalPhaseError('Empty choices in triage response');
+      throw new FatalPhaseError(`Empty choices in ${label} response`);
     }
     const toolCall = response.choices[0]?.message?.tool_calls?.[0];
     if (!toolCall || toolCall.type !== 'function') {
-      throw new FatalPhaseError('No tool call in triage response');
+      throw new FatalPhaseError(`No tool call in ${label} response`);
     }
 
     let raw: unknown;
     try {
       raw = JSON.parse(toolCall.function.arguments);
     } catch {
-      throw new FatalPhaseError('Triage response arguments not valid JSON');
+      throw new FatalPhaseError(`${label} response arguments not valid JSON`);
     }
 
-    const parsed = triageOutputSchema.safeParse(raw);
+    const parsed = schema.safeParse(raw);
     if (!parsed.success) {
-      throw new FatalPhaseError(`Triage output failed validation: ${parsed.error.message}`);
+      throw new FatalPhaseError(`${label} output failed validation: ${parsed.error.message}`);
     }
 
     return { output: parsed.data, durationMs, provider };
+  }
+
+  async triageTicket(ticketId: string): Promise<PhaseResult> {
+    const ticket = await this.repo.getTicketById(ticketId);
+    if (!ticket) throw new FatalPhaseError(`Ticket ${ticketId} not found`);
+
+    logger.info({ ticketId }, 'AI triage started');
+    const result = await this.callPortkeyTool(
+      [
+        {
+          role: 'system',
+          content:
+            'You are a support ticket triage system. Analyze the ticket and call triage_ticket with structured output. Classify strictly from allowed enum values — do not invent categories. Summary must be one sentence, factual, under 300 characters.',
+        },
+        {
+          role: 'user',
+          content: `<ticket>\n<subject>${ticket.subject}</subject>\n<body>${ticket.body}</body>\n</ticket>`,
+        },
+      ],
+      TRIAGE_TOOL,
+      'triage_ticket',
+      triageOutputSchema,
+      'triage',
+    );
+    logger.info({ ticketId, durationMs: result.durationMs, provider: result.provider }, 'AI triage complete');
+    return result;
   }
 
   async draftResolution(ticketId: string): Promise<PhaseResult> {
@@ -175,71 +190,40 @@ export class AiService {
       this.repo.getTicketById(ticketId),
       this.repo.getTicketPhasesByTicketId(ticketId),
     ]);
-
     if (!ticket) throw new FatalPhaseError(`Ticket ${ticketId} not found`);
 
     const triagePhase = phases.find(p => p.phase === 'triage' && p.status === 'success');
-    if (!triagePhase)
-      throw new FatalPhaseError(`Triage output not available for ticket ${ticketId}`);
+    if (!triagePhase) throw new FatalPhaseError(`Triage output not available for ticket ${ticketId}`);
 
     const triageParsed = triageOutputSchema.safeParse(triagePhase.output);
     if (!triageParsed.success) {
       throw new FatalPhaseError(`Stored triage output invalid: ${triageParsed.error.message}`);
     }
 
-    const start = Date.now();
     logger.info({ ticketId }, 'AI draft started');
-
-    const response = await this.portkey.chat.completions.create(
-      {
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a support ticket resolution specialist. Draft a response using the triage analysis. Customer reply must be warm, professional, and address the specific issue. Internal note must reference the triage category, priority, and escalation status. Next actions must be specific and actionable (1–5 items).',
-          },
-          {
-            role: 'user',
-            content: `<ticket>\n<subject>${ticket.subject}</subject>\n<body>${ticket.body}</body>\n</ticket>\n\n<triage_analysis>\n${JSON.stringify(triageParsed.data, null, 2)}\n</triage_analysis>`,
-          },
-        ],
-        tools: [DRAFT_TOOL],
-        tool_choice: { type: 'function', function: { name: 'draft_resolution' } },
-      },
-      { timeout: 30_000 },
+    const result = await this.callPortkeyTool(
+      [
+        {
+          role: 'system',
+          content:
+            'You are a support ticket resolution specialist. Draft a response using the triage analysis. Customer reply must be warm, professional, and address the specific issue. Internal note must provide agent-specific reasoning, nuances, or edge cases not captured in the structured triage fields — do not repeat category, priority, or escalation verbatim. Next actions must be specific and actionable (1–5 items).',
+        },
+        {
+          role: 'user',
+          content: `<ticket>\n<subject>${ticket.subject}</subject>\n<body>${ticket.body}</body>\n</ticket>\n\n<triage_analysis>\n${JSON.stringify(triageParsed.data, null, 2)}\n</triage_analysis>`,
+        },
+      ],
+      DRAFT_TOOL,
+      'draft_resolution',
+      draftOutputSchema,
+      'draft',
     );
-
-    const durationMs = Date.now() - start;
-    const provider = resolveProvider(response);
-    logger.info({ ticketId, durationMs, provider }, 'AI draft complete');
-
-    if (!response.choices.length) {
-      throw new FatalPhaseError('Empty choices in draft response');
-    }
-    const toolCall = response.choices[0]?.message?.tool_calls?.[0];
-    if (!toolCall || toolCall.type !== 'function') {
-      throw new FatalPhaseError('No tool call in draft response');
-    }
-
-    let raw: unknown;
-    try {
-      raw = JSON.parse(toolCall.function.arguments);
-    } catch {
-      throw new FatalPhaseError('Draft response arguments not valid JSON');
-    }
-
-    const parsed = draftOutputSchema.safeParse(raw);
-    if (!parsed.success) {
-      throw new FatalPhaseError(`Draft output failed validation: ${parsed.error.message}`);
-    }
-
-    return { output: parsed.data, durationMs, provider };
+    logger.info({ ticketId, durationMs: result.durationMs, provider: result.provider }, 'AI draft complete');
+    return result;
   }
 
   async runPhase(ticketId: string, phase: PhaseName): Promise<PhaseResult> {
-    const handler = this.phaseHandlers[phase];
-    if (!handler) throw new Error(`Unknown phase: ${String(phase)}`);
-    return handler(ticketId);
+    return this.phaseHandlers[phase](ticketId);
   }
 }
 

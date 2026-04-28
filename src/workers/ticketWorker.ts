@@ -1,20 +1,13 @@
 import { FatalPhaseError } from '../lib/errors.ts';
 import logger from '../lib/logger.ts';
-import { receiveTickets, deleteTicketMessage, changeMessageVisibility } from '../queues/ticketQueue.ts';
+import {
+  receiveTickets,
+  deleteTicketMessage,
+  changeMessageVisibility,
+} from '../queues/ticketQueue.ts';
 import { runPhase } from '../services/aiService.ts';
 import type { PhaseResult } from '../services/aiService.ts';
-import {
-  claimPhaseForProcessing,
-  completePhaseSuccess,
-  completeTicket,
-  failPhaseAttempt,
-  failTicket,
-  getTicketById,
-  getTicketPhasesByTicketId,
-  insertEvent,
-  transitionTicketStatus,
-  updateTicketStatus,
-} from '../repositories/ticketRepo.ts';
+import { postgresTicketRepo, type ITicketRepo } from '../repositories/ticketRepo.ts';
 import type { Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketPhase } from '../schemas/phaseSchema.ts';
 
@@ -22,16 +15,16 @@ type TicketStatus = Ticket['status'];
 type PhaseName = TicketPhase['phase'];
 
 type RepoDeps = {
-  getTicketByIdFn?: typeof getTicketById;
-  getTicketPhasesByTicketIdFn?: typeof getTicketPhasesByTicketId;
-  transitionTicketStatusFn?: typeof transitionTicketStatus;
-  updateTicketStatusFn?: typeof updateTicketStatus;
-  claimPhaseForProcessingFn?: typeof claimPhaseForProcessing;
-  completePhaseSuccessFn?: typeof completePhaseSuccess;
-  failPhaseAttemptFn?: typeof failPhaseAttempt;
-  completeTicketFn?: typeof completeTicket;
-  failTicketFn?: typeof failTicket;
-  insertEventFn?: typeof insertEvent;
+  getTicketByIdFn?: ITicketRepo['getTicketById'];
+  getTicketPhasesByTicketIdFn?: ITicketRepo['getTicketPhasesByTicketId'];
+  transitionTicketStatusFn?: ITicketRepo['transitionTicketStatus'];
+  updateTicketStatusFn?: ITicketRepo['updateTicketStatus'];
+  claimPhaseForProcessingFn?: ITicketRepo['claimPhaseForProcessing'];
+  completePhaseSuccessFn?: ITicketRepo['completePhaseSuccess'];
+  failPhaseAttemptFn?: ITicketRepo['failPhaseAttempt'];
+  completeTicketFn?: ITicketRepo['completeTicket'];
+  failTicketFn?: ITicketRepo['failTicket'];
+  insertEventFn?: ITicketRepo['insertEvent'];
 };
 
 type QueueDeps = {
@@ -49,16 +42,28 @@ type ResolvedDeps = Required<RepoDeps> & Required<QueueDeps> & Required<PhaseDep
 
 function resolveDeps(deps: WorkerDeps): ResolvedDeps {
   return {
-    getTicketByIdFn: deps.getTicketByIdFn ?? getTicketById,
-    getTicketPhasesByTicketIdFn: deps.getTicketPhasesByTicketIdFn ?? getTicketPhasesByTicketId,
-    transitionTicketStatusFn: deps.transitionTicketStatusFn ?? transitionTicketStatus,
-    updateTicketStatusFn: deps.updateTicketStatusFn ?? updateTicketStatus,
-    claimPhaseForProcessingFn: deps.claimPhaseForProcessingFn ?? claimPhaseForProcessing,
-    completePhaseSuccessFn: deps.completePhaseSuccessFn ?? completePhaseSuccess,
-    failPhaseAttemptFn: deps.failPhaseAttemptFn ?? failPhaseAttempt,
-    completeTicketFn: deps.completeTicketFn ?? completeTicket,
-    failTicketFn: deps.failTicketFn ?? failTicket,
-    insertEventFn: deps.insertEventFn ?? insertEvent,
+    getTicketByIdFn:
+      deps.getTicketByIdFn ?? postgresTicketRepo.getTicketById.bind(postgresTicketRepo),
+    getTicketPhasesByTicketIdFn:
+      deps.getTicketPhasesByTicketIdFn ??
+      postgresTicketRepo.getTicketPhasesByTicketId.bind(postgresTicketRepo),
+    transitionTicketStatusFn:
+      deps.transitionTicketStatusFn ??
+      postgresTicketRepo.transitionTicketStatus.bind(postgresTicketRepo),
+    updateTicketStatusFn:
+      deps.updateTicketStatusFn ?? postgresTicketRepo.updateTicketStatus.bind(postgresTicketRepo),
+    claimPhaseForProcessingFn:
+      deps.claimPhaseForProcessingFn ??
+      postgresTicketRepo.claimPhaseForProcessing.bind(postgresTicketRepo),
+    completePhaseSuccessFn:
+      deps.completePhaseSuccessFn ??
+      postgresTicketRepo.completePhaseSuccess.bind(postgresTicketRepo),
+    failPhaseAttemptFn:
+      deps.failPhaseAttemptFn ?? postgresTicketRepo.failPhaseAttempt.bind(postgresTicketRepo),
+    completeTicketFn:
+      deps.completeTicketFn ?? postgresTicketRepo.completeTicket.bind(postgresTicketRepo),
+    failTicketFn: deps.failTicketFn ?? postgresTicketRepo.failTicket.bind(postgresTicketRepo),
+    insertEventFn: deps.insertEventFn ?? postgresTicketRepo.insertEvent.bind(postgresTicketRepo),
     changeMessageVisibilityFn: deps.changeMessageVisibilityFn ?? changeMessageVisibility,
     deleteMessageFn: deps.deleteMessageFn ?? deleteTicketMessage,
     processPhaseFn: deps.processPhaseFn ?? runPhase,
@@ -98,7 +103,10 @@ async function handlePhaseError(
     const failedPhase = await deps.failPhaseAttemptFn(ticketId, phase, phaseError.message);
     await deps.failTicketFn(ticketId);
     if (failedPhase) {
-      await deps.insertEventFn(ticketId, 'dlq_routed', phase, { attempt: failedPhase.attempts, reason: 'fatal_error' });
+      await deps.insertEventFn(ticketId, 'dlq_routed', phase, {
+        attempt: failedPhase.attempts,
+        reason: 'fatal_error',
+      });
     }
     await deps.deleteMessageFn(receiptHandle);
     return;
@@ -116,12 +124,18 @@ async function handlePhaseError(
 
   if (failedPhase.attempts >= 3) {
     await deps.failTicketFn(ticketId);
-    await deps.insertEventFn(ticketId, 'dlq_routed', phase, { attempt: failedPhase.attempts, reason: 'max_attempts' });
+    await deps.insertEventFn(ticketId, 'dlq_routed', phase, {
+      attempt: failedPhase.attempts,
+      reason: 'max_attempts',
+    });
     await deps.deleteMessageFn(receiptHandle);
   } else {
     const backoff = backoffSeconds(failedPhase.attempts);
     await deps.transitionTicketStatusFn(ticketId, ['processing'], 'queued');
-    await deps.insertEventFn(ticketId, 'retry_scheduled', phase, { attempt: failedPhase.attempts, backoff_seconds: backoff });
+    await deps.insertEventFn(ticketId, 'retry_scheduled', phase, {
+      attempt: failedPhase.attempts,
+      backoff_seconds: backoff,
+    });
     await deps.changeMessageVisibilityFn(receiptHandle, backoff);
   }
 }
