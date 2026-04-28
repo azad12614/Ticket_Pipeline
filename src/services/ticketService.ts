@@ -1,5 +1,6 @@
 import { enqueueTicket } from '../queues/ticketQueue.ts';
 import { postgresTicketRepo, type TicketWithPhases } from '../repositories/ticketRepo.ts';
+import type { ITicketRepo } from '../repositories/ticketRepo.ts';
 import type { TicketInput, Ticket } from '../schemas/ticketSchema.ts';
 
 export class NotFoundError extends Error {
@@ -10,10 +11,18 @@ export class NotFoundError extends Error {
   }
 }
 
-interface SubmitTicketDeps {
-  createTicketFn?: (input: TicketInput) => Promise<Ticket>;
+type SubmitTicketDeps = {
+  createTicketFn?: ITicketRepo['createTicket'];
   enqueueTicketFn?: (ticketId: string) => Promise<void> | void;
-}
+};
+
+type ListTicketsDeps = {
+  getAllTicketsFn?: ITicketRepo['getAllTickets'];
+};
+
+type GetTicketDeps = {
+  getTicketWithPhasesByIdFn?: ITicketRepo['getTicketWithPhasesById'];
+};
 
 export async function submitTicket(
   input: TicketInput,
@@ -28,12 +37,19 @@ export async function submitTicket(
   return ticket;
 }
 
-export async function listTickets(): Promise<Pick<Ticket, 'id' | 'status' | 'created_at'>[]> {
-  return postgresTicketRepo.getAllTickets();
+export async function listTickets(
+  deps: ListTicketsDeps = {},
+): Promise<Pick<Ticket, 'id' | 'status' | 'created_at'>[]> {
+  const getAllTicketsFn =
+    deps.getAllTicketsFn ?? postgresTicketRepo.getAllTickets.bind(postgresTicketRepo);
+  return getAllTicketsFn();
 }
 
-export async function getTicket(id: string): Promise<TicketWithPhases> {
-  const ticket = await postgresTicketRepo.getTicketWithPhasesById(id);
+export async function getTicket(id: string, deps: GetTicketDeps = {}): Promise<TicketWithPhases> {
+  const getTicketWithPhasesByIdFn =
+    deps.getTicketWithPhasesByIdFn ??
+    postgresTicketRepo.getTicketWithPhasesById.bind(postgresTicketRepo);
+  const ticket = await getTicketWithPhasesByIdFn(id);
   if (!ticket) throw new NotFoundError(id);
   return ticket;
 }

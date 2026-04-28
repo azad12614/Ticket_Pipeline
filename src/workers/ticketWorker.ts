@@ -140,12 +140,14 @@ async function handlePhaseError(
   }
 }
 
+const MAX_PHASES = 10;
+
 async function orchestratePhases(
   ticketId: string,
   receiptHandle: string,
   deps: ResolvedDeps,
 ): Promise<void> {
-  while (true) {
+  for (let i = 0; i < MAX_PHASES; i++) {
     const phases = await deps.getTicketPhasesByTicketIdFn(ticketId);
     const nextPhase = findNextPhase(phases, ticketId);
 
@@ -173,6 +175,10 @@ async function orchestratePhases(
       return;
     }
   }
+
+  logger.error({ ticketId }, 'Phase loop exceeded max iterations — failing ticket');
+  await deps.failTicketFn(ticketId);
+  await deps.deleteMessageFn(receiptHandle);
 }
 
 export async function processTicketLifecycle(

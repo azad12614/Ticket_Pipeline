@@ -10,7 +10,7 @@ import { startTicketWorker } from './workers/ticketWorker.ts';
 const app = createApp({ listTickets, submitTicket, getTicket });
 const server = createServer(app);
 const io = createIo(server);
-startNotifyService(io);
+const notify = startNotifyService(io);
 const worker = startTicketWorker();
 
 server.listen(config.port, () => {
@@ -20,9 +20,7 @@ server.listen(config.port, () => {
 function shutdown(signal: NodeJS.Signals): void {
   logger.info({ signal }, 'Shutting down');
   worker.stop();
-  void worker.done.finally(() => {
-    server.close(() => process.exit(0));
-  });
+  void worker.done.finally(() => notify.stop()).finally(() => server.close(() => process.exit(0)));
 }
 
 process.on('SIGINT', () => shutdown('SIGINT'));
