@@ -1,6 +1,6 @@
 # AI Ticket Processing Pipeline
 
-Node.js backend that processes customer support tickets through a 2-phase AI pipeline. Tickets are triaged and drafted asynchronously via SQS, with real-time status updates over Socket.io.
+Node.js + TypeScript service that processes customer support tickets through an asynchronous, two-phase AI pipeline. The worker consumes SQS messages, runs two AI phases (triage + draft) via Portkey, persists results to Postgres, and emits real-time events via Socket.io using Postgres LISTEN/NOTIFY.
 
 ## Architecture
 
@@ -28,155 +28,127 @@ POST /tickets
              Socket.io emit
 ```
 
-**Key design decisions:**
+**Design highlights**
 
-- Worker never re-enqueues on failure — adjusts SQS visibility timeout (exponential backoff). Message is never lost between a delete and a re-send.
-- Phase rows created at ticket submission — API shape is stable from moment ticket exists.
-- Completed phases are never re-run — `UNIQUE(ticket_id, phase)` + status check guards idempotency.
-- Socket.io events sourced from DB trigger on `ticket_events` INSERT — worker is not involved in emission. Covers `ticket_created` which originates outside the worker.
-- Full event replay on subscribe — late joins and reconnects get full history immediately.
+- Worker uses visibility-timeout backoff instead of automatic re-enqueue to avoid duplicate processing.
+- Phase rows are created at ticket submission so the API shape is stable immediately.
+- Completed phases are idempotent-guarded (`UNIQUE(ticket_id, phase)` and status checks).
+- Socket.io events are emitted from DB-triggered events (`ticket_events` INSERT) to guarantee full replay and decouple worker from realtime delivery.
 
 ## Stack
 
-| Layer      | Technology                                     |
-| ---------- | ---------------------------------------------- |
-| Runtime    | Node.js + TypeScript (ESM)                     |
-| HTTP       | Express 5                                      |
-| Database   | PostgreSQL 16                                  |
-| Queue      | AWS SQS (LocalStack in dev)                    |
-| AI Gateway | Portkey (Anthropic → OpenAI → Google fallback) |
-| Real-time  | Socket.io + PG LISTEN/NOTIFY                   |
-| Validation | Zod                                            |
-| Logging    | Pino                                           |
-| Tests      | Vitest                                         |
+| Layer      | Technology                   |
+| ---------- | ---------------------------- |
+| Runtime    | Node.js + TypeScript (ESM)   |
+| HTTP       | Express 5                    |
+| Database   | PostgreSQL                   |
+| Queue      | AWS SQS (LocalStack in dev)  |
+| AI Gateway | Portkey (provider fallback)  |
+| Real-time  | Socket.io + PG LISTEN/NOTIFY |
+| Validation | Zod                          |
+| Logging    | Pino                         |
+| Tests      | Vitest                       |
 
-## Project Structure
+## Project layout
 
-```
-src/
-├── routes/          # Express route definitions
-├── controllers/     # Request/response handling
-├── services/
-│   ├── ticketService.ts    # Ticket creation
-│   ├── aiService.ts        # Phase 1 (triage) + Phase 2 (draft)
-│   └── notifyService.ts    # PG LISTEN → Socket.io emit
-├── repositories/    # All SQL — tickets, phases, events
-├── queues/          # SQS enqueue, receive, delete, visibility
-├── workers/         # SQS long-poll loop + phase orchestrator
-├── schemas/         # Zod schemas (ticket, phase, event, triage, draft)
-├── middleware/      # Error handler
-└── lib/
-    ├── config.ts    # Zod-validated env vars
-    ├── db.ts        # Postgres pool
-    ├── io.ts        # Socket.io server + subscribe/replay handler
-    ├── logger.ts    # Pino instance
-    └── errors.ts    # FatalPhaseError
-migrations/          # 005 SQL files + migrate.ts runner
-scripts/
-├── setup-localstack.sh   # Provision SQS queues in LocalStack
-├── ticket-submit.mjs     # Submit ticket + watch live events
-└── ticket-watch.mjs      # Watch events for an existing ticket ID
-```
+See the `src/` folder for the main application code. Major areas:
 
-## Setup
+- **routes/** — Express route definitions
+- **controllers/** — request/response handling
+- **services/** — ticket orchestration, AI calls, notify service
+- **repositories/** — SQL access for tickets, phases, events
+- **queues/** — SQS helpers (enqueue, receive, delete, visibility)
+- **workers/** — SQS long-poll loop and phase orchestration
+- **schemas/** — Zod schemas for request/response and AI outputs
+- **lib/** — `config.ts`, `db.ts`, `io.ts`, `logger.ts`, `errors.ts`
+- **scripts/** — helpers for LocalStack and local testing
 
-### Prerequisites
+## Quick start
+
+Prerequisites:
 
 - Node.js 22+
 - Docker
 
-### 1. Install dependencies
+1. Install deps
 
 ```bash
 npm install
 ```
 
-### 2. Environment
+2. Copy environment file
 
 ```bash
 cp .env.example .env
 ```
 
-.env reference:
-
-```
-DATABASE_URL=postgresql://ticketuser:ticketpass@localhost:5432/tickets
-PORT=3000
-LOG_LEVEL=info
-NODE_ENV=development
-
-# AWS / SQS
-# Set your AWS credentials here. For LocalStack development you can use the
-# LocalStack defaults (e.g. "test"), but do not commit real credentials.
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=<your-aws-access-key-id>
-AWS_SECRET_ACCESS_KEY=<your-aws-secret-access-key>
-SQS_ENDPOINT=http://localhost:4566
-SQS_QUEUE_URL=http://localhost:4566/000000000000/tickets
-
-PORTKEY_API_KEY=<your-portkey-api-key>
-PORTKEY_CONFIG=<your-portkey-config-id>
-LOCALSTACK_AUTH_TOKEN=<your-localstack-auth-token>
-```
-
-### 3. Start infrastructure
+3. Start infrastructure (Postgres, LocalStack, etc.)
 
 ```bash
 docker compose up -d
 ```
 
-### 4. Migrate DB + provision queues
+4. Migrate DB and (queues are provisioned by docker-compose)
+
+If you brought up infrastructure with `docker compose up -d`, the `localstack-setup` service in the compose file will provision the SQS queues automatically. If you did not use `docker compose`, run the setup script manually.
 
 ```bash
 npm run migrate
-bash scripts/setup-localstack.sh
+# Optional (only if you didn't use `docker compose` or want to re-provision):
+# bash scripts/setup-localstack.sh
 ```
 
-### 5. Start server
+5. Start the app (dev)
 
 ```bash
 npm run dev
 ```
 
-## Testing
+Notes:
 
-### Submit a ticket and watch live events
+- `SQS_ENDPOINT` and `SQS_QUEUE_URL` are used for LocalStack in development.
+- Keep secrets out of the repo; use `.env` and CI secrets for deployments.
+
+## Environment variables
+
+Copy from `.env.example` and set values appropriate for your environment. Important vars:
+
+- `DATABASE_URL` — Postgres connection string
+- `PORT` — HTTP port (default 3000)
+- `SQS_QUEUE_URL` / `SQS_ENDPOINT` — for LocalStack or AWS
+- `PORTKEY_API_KEY` / `PORTKEY_CONFIG` — Portkey credentials
+
+## Testing & local workflows
+
+Submit a ticket and watch its events locally:
 
 ```bash
-# interactive
-node scripts/ticket-submit.mjs
+# interactive (recommended)
+npm run submit
 
 # inline
-node scripts/ticket-submit.mjs "Cannot login" "Locked out for 3 days, need password reset"
+npm run submit -- "Cannot login" "Locked out for 3 days, need password reset"
+
+# direct (if you prefer running the script file)
+node scripts/ticket-submit.ts "Cannot login" "Locked out for 3 days, need password reset"
 ```
 
-Expected output:
-
-```
-Ticket created: 01966b3a-...
-Watching events (ctrl+c to stop)...
-
-[14:03:01] ticket_created
-[14:04:01] phase_started (triage)
-[14:04:03] phase_completed (triage)  {"durationMs":2100,"provider":"anthropic"}
-[14:04:03] phase_started (draft)
-[14:04:05] phase_completed (draft)   {"durationMs":1800,"provider":"anthropic"}
-[14:04:05] ticket_completed
-```
-
-### Watch an existing ticket
+Watch an existing ticket's events:
 
 ```bash
-node scripts/ticket-watch.mjs <ticketId>
+npm run watch -- <ticketId>
+
+# or directly
+node scripts/ticket-watch.ts <ticketId>
 ```
 
-### Check ticket result
+Fetch ticket status/result:
 
 ```bash
 curl -s http://localhost:3000/tickets/<id> | jq
 ```
 
-### Run unit tests
+Run unit tests:
 
 ```bash
 npm test
@@ -184,27 +156,25 @@ npm test
 
 ## API
 
-### `POST /tickets`
+### POST /tickets
 
-Submit a ticket for processing. Returns `202` immediately — processing is async.
+Submit a ticket for async processing. Returns `202` with ticket metadata.
 
-**Request:**
+Request body:
 
 ```json
 { "subject": "string", "body": "string" }
 ```
 
-**Response `202`:**
+Response `202` example:
 
 ```json
 { "id": "uuid", "status": "queued", "createdAt": "ISO8601" }
 ```
 
-### `GET /tickets/:id`
+### GET /tickets/:id
 
-Fetch ticket status and AI output.
-
-**Response `200`:**
+Returns ticket status and phase outputs. Example shape:
 
 ```json
 {
@@ -216,20 +186,13 @@ Fetch ticket status and AI output.
     "triage": {
       "status": "success",
       "output": {
-        "category": "technical",
-        "priority": "high",
-        "sentiment": "frustrated",
-        "escalation": false,
-        "routing_target": "technical-team",
-        "summary": "User locked out for 3 days, needs password reset."
+        /* triage JSON */
       }
     },
     "draft": {
       "status": "success",
       "output": {
-        "customer_reply": "...",
-        "internal_note": "...",
-        "next_actions": ["..."]
+        /* draft JSON */
       }
     }
   }
@@ -238,7 +201,9 @@ Fetch ticket status and AI output.
 
 ## Socket.io
 
-Connect to `http://localhost:3000`. Emit `subscribe` with a ticket ID to join its room. All events use the `ticket:event` name.
+Connect to the server and emit `subscribe` with a ticket ID to receive `ticket:event` messages. The server replays full event history on subscribe so late joins and reconnects receive complete context.
+
+Client example:
 
 ```js
 const s = io('http://localhost:3000');
@@ -246,25 +211,42 @@ s.on('connect', () => s.emit('subscribe', ticketId));
 s.on('ticket:event', event => console.log(event));
 ```
 
-**Event types:** `ticket_created`, `phase_started`, `phase_completed`, `phase_failed`, `retry_scheduled`, `dlq_routed`, `ticket_completed`
+Event types include `ticket_created`, `phase_started`, `phase_completed`, `phase_failed`, `retry_scheduled`, `dlq_routed`, and `ticket_completed`.
 
-Full event replay is sent on subscribe — reconnects and late joins receive the complete history.
+## AI pipeline
 
-## AI Pipeline
+AI calls are routed through Portkey which can fall back across providers. Zod schemas validate AI outputs; validation failures are treated as fatal for a phase (no retry). Transient network/5xx errors are retried with exponential backoff.
 
-Portkey routes all AI calls through a fallback chain: **Anthropic Claude → OpenAI GPT-4o → Google Gemini**. Provider switching is transparent — Zod schemas enforce identical output structure from all providers.
+Phases:
 
-**Phase 1 — Triage** (`triageTicket`): classifies category, priority, sentiment, escalation flag, routing target, and summary.
+- **Triage** — classifies category, priority, sentiment, escalation, routing target, and summary.
+- **Draft** — crafts customer reply, internal note, and next actions; uses triage output as context.
 
-**Phase 2 — Draft** (`draftResolution`): generates customer-facing reply, internal support note, and next actions using Phase 1 output as context.
-
-Both phases use tool use (forced function call) to guarantee structured JSON. Responses validated with Zod before writing to Postgres. A Zod validation failure is fatal — no retry. Network errors and 5xx responses are retryable (max 3 attempts, exponential backoff).
-
-## Daily Reset (dev)
+## Development reset
 
 ```bash
+# Recreate infra and start services
 docker compose down -v && docker compose up -d
+
+# Run migrations
 npm run migrate
-bash scripts/setup-localstack.sh
+
+# LocalStack queues are provisioned automatically when using docker-compose.
+# If you did not use docker-compose or need to re-provision, run:
+# bash scripts/setup-localstack.sh
+
+# Start the app
 npm run dev
 ```
+
+## Contributing
+
+File issues or PRs; keep changes focused and include tests for new behavior.
+
+---
+
+If you'd like, I can also:
+
+- update README links to specific files in the repo,
+- add a short developer quickstart for first-time contributors, or
+- generate a minimal diagram file for the architecture.
