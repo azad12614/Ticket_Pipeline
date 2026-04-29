@@ -88,11 +88,14 @@ cp .env.example .env
 docker compose up -d
 ```
 
-4. Migrate DB and provision SQS queues
+4. Migrate DB and (queues are provisioned by docker-compose)
+
+If you brought up infrastructure with `docker compose up -d`, the `localstack-setup` service in the compose file will provision the SQS queues automatically. If you did not use `docker compose`, run the setup script manually.
 
 ```bash
 npm run migrate
-bash scripts/setup-localstack.sh
+# Optional (only if you didn't use `docker compose` or want to re-provision):
+# bash scripts/setup-localstack.sh
 ```
 
 5. Start the app (dev)
@@ -120,17 +123,23 @@ Copy from `.env.example` and set values appropriate for your environment. Import
 Submit a ticket and watch its events locally:
 
 ```bash
-# interactive
-node scripts/ticket-submit.mjs
+# interactive (recommended)
+npm run submit
 
 # inline
-node scripts/ticket-submit.mjs "Cannot login" "Locked out for 3 days, need password reset"
+npm run submit -- "Cannot login" "Locked out for 3 days, need password reset"
+
+# direct (if you prefer running the script file)
+node scripts/ticket-submit.ts "Cannot login" "Locked out for 3 days, need password reset"
 ```
 
 Watch an existing ticket's events:
 
 ```bash
-node scripts/ticket-watch.mjs <ticketId>
+npm run watch -- <ticketId>
+
+# or directly
+node scripts/ticket-watch.ts <ticketId>
 ```
 
 Fetch ticket status/result:
@@ -216,9 +225,17 @@ Phases:
 ## Development reset
 
 ```bash
+# Recreate infra and start services
 docker compose down -v && docker compose up -d
+
+# Run migrations
 npm run migrate
-bash scripts/setup-localstack.sh
+
+# LocalStack queues are provisioned automatically when using docker-compose.
+# If you did not use docker-compose or need to re-provision, run:
+# bash scripts/setup-localstack.sh
+
+# Start the app
 npm run dev
 ```
 
