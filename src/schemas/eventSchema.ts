@@ -8,7 +8,7 @@ export const ticketEventSchema = z.object({
     'ticket_created',
     'phase_started', 'phase_completed', 'phase_failed',
     'retry_scheduled', 'fallback_triggered', 'dlq_routed',
-    'ticket_completed', 'ticket_failed',
+    'ticket_completed', 'ticket_failed', 'queue_failed',
   ]),
   payload: z.unknown().nullable(),
   created_at: z.coerce.date(),
