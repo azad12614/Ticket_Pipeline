@@ -3,7 +3,7 @@ import * as PortkeyModule from 'portkey-ai';
 import { config } from '../lib/config.ts';
 import { FatalPhaseError } from '../lib/errors.ts';
 import logger from '../lib/logger.ts';
-import { postgresTicketRepo, type ITicketRepo } from '../repositories/ticketRepo.ts';
+import type { TicketRepo } from '../repositories/ticketRepo.ts';
 import { draftOutputSchema } from '../schemas/draftSchema.ts';
 import { triageOutputSchema } from '../schemas/triageSchema.ts';
 
@@ -108,11 +108,11 @@ const DRAFT_TOOL: ChatTool = {
 };
 
 export class AiService {
-  private readonly repo: ITicketRepo;
+  private readonly repo: TicketRepo;
   private readonly portkey: PortkeyClient;
   private readonly phaseHandlers: Record<PhaseName, PhaseHandler>;
 
-  constructor(repo: ITicketRepo, portkey: PortkeyClient) {
+  constructor(repo: TicketRepo, portkey: PortkeyClient) {
     this.repo = repo;
     this.portkey = portkey;
     this.phaseHandlers = {
@@ -228,18 +228,15 @@ export class AiService {
 }
 
 export type RunPhaseDeps = {
-  repo?: ITicketRepo;
-  portkey?: PortkeyClient;
+  repo: TicketRepo;
+  portkey: PortkeyClient;
 };
 
 export function runPhase(
   ticketId: string,
   phase: PhaseName,
-  deps: RunPhaseDeps = {},
+  deps: RunPhaseDeps,
 ): Promise<PhaseResult> {
-  const service = new AiService(
-    deps.repo ?? postgresTicketRepo,
-    deps.portkey ?? createPortkeyClient(),
-  );
+  const service = new AiService(deps.repo, deps.portkey);
   return service.runPhase(ticketId, phase);
 }
