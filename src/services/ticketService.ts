@@ -1,4 +1,4 @@
-import type { ITicketRepo } from '../repositories/ticketRepo.ts';
+import type { TicketRepo } from '../repositories/ticketRepo.ts';
 import type { TicketWithPhases } from '../repositories/ticketRepo.ts';
 import type { TicketInput, Ticket } from '../schemas/ticketSchema.ts';
 
@@ -11,21 +11,27 @@ export class NotFoundError extends Error {
 }
 
 export type SubmitTicketDeps = {
-  createTicketFn: ITicketRepo['createTicket'];
+  createTicketFn: TicketRepo['createTicket'];
   enqueueTicketFn: (ticketId: string) => Promise<void> | void;
+  insertEventFn: TicketRepo['insertEvent'];
 };
 
 export type ListTicketsDeps = {
-  getAllTicketsFn: ITicketRepo['getAllTickets'];
+  getAllTicketsFn: TicketRepo['getAllTickets'];
 };
 
 export type GetTicketDeps = {
-  getTicketWithPhasesByIdFn: ITicketRepo['getTicketWithPhasesById'];
+  getTicketWithPhasesByIdFn: TicketRepo['getTicketWithPhasesById'];
 };
 
 export async function submitTicket(input: TicketInput, deps: SubmitTicketDeps): Promise<Ticket> {
   const ticket = await deps.createTicketFn(input);
-  await deps.enqueueTicketFn(ticket.id);
+  try {
+    await deps.enqueueTicketFn(ticket.id);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    await deps.insertEventFn(ticket.id, 'queue_failed', null, { reason });
+  }
   return ticket;
 }
 

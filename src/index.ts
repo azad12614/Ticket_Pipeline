@@ -20,12 +20,23 @@ const app = createApp({
     submitTicket(input, {
       createTicketFn: postgresTicketRepo.createTicket.bind(postgresTicketRepo),
       enqueueTicketFn: enqueueTicket,
+      insertEventFn: postgresTicketRepo.insertEvent.bind(postgresTicketRepo),
     }),
   getTicket: id =>
     getTicket(id, {
       getTicketWithPhasesByIdFn:
         postgresTicketRepo.getTicketWithPhasesById.bind(postgresTicketRepo),
     }),
+  retry: {
+    getTicketByIdFn: postgresTicketRepo.getTicketById.bind(postgresTicketRepo),
+    getLatestEventByTicketIdFn: postgresTicketRepo.getLatestEventByTicketId.bind(postgresTicketRepo),
+    getTicketWithPhasesByIdFn: postgresTicketRepo.getTicketWithPhasesById.bind(postgresTicketRepo),
+    resetFailedPhasesFn: postgresTicketRepo.resetFailedPhases.bind(postgresTicketRepo),
+    updateTicketStatusFn: postgresTicketRepo.updateTicketStatus.bind(postgresTicketRepo),
+    transitionTicketStatusFn: postgresTicketRepo.transitionTicketStatus.bind(postgresTicketRepo),
+    insertEventFn: postgresTicketRepo.insertEvent.bind(postgresTicketRepo),
+    enqueueTicketFn: enqueueTicket,
+  },
 });
 
 const server = createServer(app);
@@ -40,7 +51,11 @@ const notify = startNotifyService(io, {
 });
 
 const worker = startTicketWorker();
-const dlqConsumer = startDlqConsumer();
+const dlqConsumer = startDlqConsumer({
+  insertEventFn: postgresTicketRepo.insertEvent.bind(postgresTicketRepo),
+  failTicketFn: postgresTicketRepo.failTicket.bind(postgresTicketRepo),
+  enqueueTicketFn: enqueueTicket,
+});
 
 async function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
