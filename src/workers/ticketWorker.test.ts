@@ -186,10 +186,11 @@ describe('processTicketLifecycle', () => {
     expect(processPhaseFn).not.toHaveBeenCalled();
   });
 
-  it('marks ticket failed and deletes message after phase reaches 3 attempts', async () => {
+  it('backs off with visibility timeout after phase reaches 3 attempts — lets SQS redrive to DLQ', async () => {
     const failTicketFn = vi.fn().mockResolvedValue(makeTicket({ status: 'failed' }));
     const deleteMessageFn = vi.fn().mockResolvedValue(undefined);
     const changeMessageVisibilityFn = vi.fn().mockResolvedValue(undefined);
+    const transitionTicketStatusFn = vi.fn().mockResolvedValue(makeTicket({ status: 'queued' }));
 
     await processTicketLifecycle(TICKET_ID, RECEIPT, makeWorkerDeps({
       getTicketByIdFn: vi.fn().mockResolvedValue(makeTicket({ status: 'queued' })),
@@ -197,7 +198,7 @@ describe('processTicketLifecycle', () => {
         makePhase({ phase: 'triage', status: 'started' }),
         makePhase({ id: '018f8a30-52f7-7d9f-bb7d-6924b8d8a202', phase: 'draft', status: 'started' }),
       ]),
-      transitionTicketStatusFn: vi.fn().mockResolvedValue(makeTicket({ status: 'processing' })),
+      transitionTicketStatusFn,
       failTicketFn,
       claimPhaseForProcessingFn: vi.fn().mockResolvedValue(makePhase({ phase: 'triage', status: 'progress', started_at: new Date() })),
       failPhaseAttemptFn: vi.fn().mockResolvedValue(makePhase({ phase: 'triage', status: 'failure', attempts: 3 })),
@@ -207,9 +208,11 @@ describe('processTicketLifecycle', () => {
       processPhaseFn: vi.fn().mockRejectedValue(new Error('phase error')),
     }));
 
-    expect(failTicketFn).toHaveBeenCalledWith(TICKET_ID);
-    expect(deleteMessageFn).toHaveBeenCalledWith(RECEIPT);
-    expect(changeMessageVisibilityFn).not.toHaveBeenCalled();
+    // Worker backs off — SQS redrive moves message to DLQ, DLQ consumer calls failTicket
+    expect(failTicketFn).not.toHaveBeenCalled();
+    expect(deleteMessageFn).not.toHaveBeenCalled();
+    expect(changeMessageVisibilityFn).toHaveBeenCalledWith(RECEIPT, expect.any(Number));
+    expect(transitionTicketStatusFn).toHaveBeenCalledWith(TICKET_ID, ['processing'], 'queued');
   });
 
   it('stores each phase output linked to the ticket id', async () => {

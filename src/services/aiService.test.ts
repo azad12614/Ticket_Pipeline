@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AiService, type PortkeyClient } from './aiService.ts';
 import { FatalPhaseError } from '../lib/errors.ts';
-import type { ITicketRepo } from '../repositories/ticketRepo.ts';
+import type { TicketRepo } from '../repositories/ticketRepo.ts';
 import type { Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketPhase } from '../schemas/phaseSchema.ts';
 
@@ -58,7 +58,7 @@ function draftResponse(args: object) {
   };
 }
 
-function makeFakeRepo(): ITicketRepo {
+function makeFakeRepo(): TicketRepo {
   return {
     getAllTickets: vi.fn(),
     createTicket: vi.fn(),
@@ -75,6 +75,7 @@ function makeFakeRepo(): ITicketRepo {
     insertEvent: vi.fn(),
     getEventsByTicketId: vi.fn(),
     getLatestEventByTicketId: vi.fn(),
+    resetFailedPhases: vi.fn(),
   };
 }
 
@@ -83,7 +84,7 @@ function makeFakePortkey(mockCreate: ReturnType<typeof vi.fn>): PortkeyClient {
 }
 
 describe('AiService.triageTicket', () => {
-  let repo: ITicketRepo;
+  let repo: TicketRepo;
   let mockCreate: ReturnType<typeof vi.fn>;
   let service: AiService;
 
@@ -154,7 +155,7 @@ describe('AiService.triageTicket', () => {
 });
 
 describe('AiService.draftResolution', () => {
-  let repo: ITicketRepo;
+  let repo: TicketRepo;
   let mockCreate: ReturnType<typeof vi.fn>;
   let service: AiService;
 
@@ -224,7 +225,7 @@ describe('AiService.draftResolution', () => {
 });
 
 describe('AiService.runPhase', () => {
-  let repo: ITicketRepo;
+  let repo: TicketRepo;
   let mockCreate: ReturnType<typeof vi.fn>;
   let service: AiService;
 
