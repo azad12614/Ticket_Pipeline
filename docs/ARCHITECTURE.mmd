@@ -22,14 +22,18 @@ flowchart TB
     end
 
     subgraph Queue["AWS SQS (LocalStack)"]
-        MQ[Main Queue ticket-processing-queue Redrive: 3]
-        DLQ[Dead-letter Queue ticket-processing-dlq]
+        MQ[Main Queue ticket-processing-queue]
+        DLQ[DLQ ticket-processing-dlq]
     end
 
     subgraph Worker["SQS Worker (src/workers/)"]
         W[Worker Long-poll consumer]
         PO[Phase Orchestrator Triage → Draft]
         RT[Retry Backoff exp+jitter]
+    end
+
+    subgraph DLQWorker["DLQ Consumer (src/consumers/)"]
+        DLQC[DLQ Consumer Poll & fail ticket]
     end
 
     subgraph AI["AI Gateway (Portkey)"]
@@ -45,43 +49,44 @@ flowchart TB
         R1[Socket.io Room ticket id]
     end
 
-    C -->|HTTP| R
-    R --> Ctrl
-    Ctrl --> SV
-    SV -->|INSERT| T
-    SV -->|INSERT| TP
-    SV -->|INSERT| TE
-    TE -->|TRIGGER| TR
-    TR -->|pg_notify| NS
-    NS -->|io.to| R1
-    R1 -->|WebSocket| C
+    C -->|1 HTTP| R
+    R -->|2| Ctrl
+    Ctrl -->|3| SV
+    SV -->|4 INSERT| T
+    SV -->|5 INSERT| TP
+    SV -->|6 INSERT| TE
+    TE -->|7 TRIGGER| TR
+    TR -->|8 pg_notify| NS
+    NS -->|9 io.to| R1
+    R1 -->|10 WebSocket| C
 
-    SV -->|SQS Send| MQ
-    MQ -->|Long-poll| W
-    W --> PO
-    PO -->|AI Call| P
-    P -->|Provider Chain| D1
-    D1 -->|Fail| P
-    P -->|Fail| D2
-    D2 -->|Fail| P
-    P -->|Fail| G2
+    SV -->|11 SQS Send| MQ
+    SV -->|12 enqueue fail → queue_failed event| TE
 
-    PO -->|Read| TP
-    PO -->|Update| TP
-    PO -->|Write| TE
+    MQ -->|13 Long-poll| W
+    W -->|14| PO
+    PO -->|15 AI Call| P
+    P -->|16 Provider Chain| D1
+    D1 -->|17 Fail| P
+    P -->|18 Fail| D2
+    D2 -->|19 Fail| P
+    P -->|20 Fail| G2
 
-    PO -->|Retry| RT
-    RT -->|Visibility Timeout| MQ
-    MQ -->|3 Fails| DLQ
-    DLQ --> DC[DLQ Consumer - runs continuously or on-demand]
-    DC -->|Write dlq_routed| TE
-    DC -->|Optional requeue| MQ
-    MR -->|Requeue via API| R
-    R -->|Trigger DLQ replay - optional| DC
+    PO -->|21 Read| TP
+    PO -->|22 Update| TP
+    PO -->|23 Write| TE
+
+    PO -->|24 Retry| RT
+    RT -->|25 Visibility Timeout| MQ
+    MQ -->|26 After 3 failures RedrivePolicy| DLQ
+    DLQ -->|27 Long-poll| DLQC
+    DLQC -->|28 failTicket| T
+    DLQC -->|29 dlq_routed event| TE
+    MR -->|30 Requeue via API| R
 
     style R1 fill:#e1f5fe
     style MQ fill:#fff3e0
-    style DLQ fill:#ffcdd2
+    style DLQ fill:#fce4ec
     style P fill:#e8f5e9
     style T fill:#f3e5f5
     style TP fill:#f3e5f5
@@ -94,14 +99,15 @@ flowchart TB
     style W fill:#ffffff,color:#000,stroke:#333
     style PO fill:#ffffff,color:#000,stroke:#333
     style RT fill:#ffffff,color:#000,stroke:#333
-    
+    style DLQC fill:#ffffff,color:#000,stroke:#333
+
     style G2 fill:#ffffff,color:#000,stroke:#333
     style IO fill:#ffffff,color:#000,stroke:#333
     style NS fill:#ffffff,color:#000,stroke:#333
 
     style R1 fill:#e1f5fe,color:#000,stroke:#333
     style MQ fill:#fff3e0,color:#000,stroke:#333
-    style DLQ fill:#ffcdd2,color:#000,stroke:#333
+    style DLQ fill:#fce4ec,color:#000,stroke:#333
     style P fill:#e8f5e9,color:#000,stroke:#333
     style T fill:#f3e5f5,color:#000,stroke:#333
     style TP fill:#f3e5f5,color:#000,stroke:#333

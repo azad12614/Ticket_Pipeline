@@ -65,7 +65,6 @@ The system responds to submissions immediately (< 200ms), processes asynchronous
 | Testing           | Vitest (unit tests only)                             |
 | Worker            | Long-polling SQS consumer (no Lambda)                |
 | Auth              | None — internal service                              |
-| Soft-Archive      | node-cron — daily job, `archived_at` column          |
 
 ---
 
@@ -135,7 +134,6 @@ DLQ consumer is a **separate process**. It reads from the DLQ, sets `ticket.stat
 
 LocalStack provisioned via `uv` + `venv`. Main queue linked to DLQ via `RedrivePolicy` with `maxReceiveCount: 3`. See README for setup commands.
 
-**SQS visibility timeout:** 300 seconds initial. Worker extends via `ChangeMessageVisibility` every 4 minutes during long AI calls to prevent re-delivery while processing. `receiptHandle` is passed as direct parameter into the phase orchestrator for this purpose.
 
 ---
 
@@ -285,17 +283,19 @@ io.to('ticket:<ticketId>').emit('ticket:event', rawEventRow)
 - `events` last 20 in chronological order (deferred — US-1.3)
 - Response 404 if ticket not found
 
-**GET /tickets** — List tickets with filtering and pagination
+**GET /tickets** — List tickets
 
-- Query: `?status=`, `?archived=true` (default false), `?page=` (default 1), `?limit=` (default 20, max 100)
-- Response 200: `{ tickets[], total, page, limit }`
-- Excludes soft-archived tickets by default
+- Response 200: `{ tickets[] }` — each item has `id`, `status`, `created_at`
+- Excludes soft-archived tickets by default (`WHERE archived_at IS NULL`)
+- Filtering, pagination, and `?archived=true` deferred (non-MVP)
 
-**POST /tickets/:id/replay** — Re-enqueue a failed ticket
+**POST /tickets/retry/:ticketId** — Re-enqueue a DLQ-routed ticket
 
-- Only accepts tickets with `status = failed` — returns 409 otherwise
-- Resets `ticket.status` to `queued`, failed phase `status` to `started`, and failed phase `attempts` to `0`; completed phases untouched
-- Response 200: `{ ticketId, status: "queued" }`
+- Requires latest event to be `dlq_routed` — returns 400 `not_dlq_routed` otherwise
+- Returns 409 `already_retried` if latest event is already `retry_scheduled`
+- Returns 400 `already_completed` if all phases are `success`
+- Resets failed phase rows to `started`/`attempts=0`; completed phases untouched
+- Response 202: `{ status: "requeued" }`
 
 **Error shape (all endpoints):** `{ "error": "CODE", "message": "...", "code": 4xx }`
 
@@ -303,7 +303,9 @@ io.to('ticket:<ticketId>').emit('ticket:event', rawEventRow)
 | --------------------------------- | ---- |
 | Missing or invalid request fields | 400  |
 | Ticket not found                  | 404  |
-| Replay on non-failed ticket       | 409  |
+| Retry on non-DLQ-routed ticket    | 400  |
+| Already retried (retry_scheduled) | 409  |
+| All phases already succeeded      | 400  |
 | Unhandled server error            | 500  |
 
 ---
