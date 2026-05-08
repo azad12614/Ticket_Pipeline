@@ -3,9 +3,10 @@ import * as PortkeyModule from 'portkey-ai';
 import { config } from '../lib/config.ts';
 import { FatalPhaseError } from '../lib/errors.ts';
 import logger from '../lib/logger.ts';
-import type { TicketRepo } from '../repositories/ticketRepo.ts';
 import { draftOutputSchema } from '../schemas/draftSchema.ts';
 import { triageOutputSchema } from '../schemas/triageSchema.ts';
+import type { Ticket } from '../schemas/ticketSchema.ts';
+import type { TicketPhase } from '../schemas/phaseSchema.ts';
 
 export type PortkeyClient = InstanceType<typeof PortkeyModule.Portkey>;
 
@@ -26,7 +27,7 @@ type PhaseName = 'triage' | 'draft';
 
 export type PhaseResult = { output: unknown; durationMs: number; provider: string };
 
-type PhaseHandler = (ticketId: string) => Promise<PhaseResult>;
+type PhaseHandler = (ticket: Ticket, phases: TicketPhase[]) => Promise<PhaseResult>;
 
 export function createPortkeyClient(): PortkeyClient {
   const apiKey = config.portkey.apiKey;
@@ -108,16 +109,14 @@ const DRAFT_TOOL: ChatTool = {
 };
 
 export class AiService {
-  private readonly repo: TicketRepo;
   private readonly portkey: PortkeyClient;
   private readonly phaseHandlers: Record<PhaseName, PhaseHandler>;
 
-  constructor(repo: TicketRepo, portkey: PortkeyClient) {
-    this.repo = repo;
+  constructor(portkey: PortkeyClient) {
     this.portkey = portkey;
     this.phaseHandlers = {
-      triage: ticketId => this.triageTicket(ticketId),
-      draft: ticketId => this.draftResolution(ticketId),
+      triage: (ticket) => this.triageTicket(ticket),
+      draft: (ticket, phases) => this.draftResolution(ticket, phases),
     } satisfies Record<PhaseName, PhaseHandler>;
   }
 
@@ -159,11 +158,8 @@ export class AiService {
     return { output: parsed.data, durationMs, provider };
   }
 
-  async triageTicket(ticketId: string): Promise<PhaseResult> {
-    const ticket = await this.repo.getTicketById(ticketId);
-    if (!ticket) throw new FatalPhaseError(`Ticket ${ticketId} not found`);
-
-    logger.info({ ticketId }, 'AI triage started');
+  async triageTicket(ticket: Ticket): Promise<PhaseResult> {
+    logger.info({ ticketId: ticket.id }, 'AI triage started');
     const result = await this.callPortkeyTool(
       [
         {
@@ -181,26 +177,20 @@ export class AiService {
       triageOutputSchema,
       'triage',
     );
-    logger.info({ ticketId, durationMs: result.durationMs, provider: result.provider }, 'AI triage complete');
+    logger.info({ ticketId: ticket.id, durationMs: result.durationMs, provider: result.provider }, 'AI triage complete');
     return result;
   }
 
-  async draftResolution(ticketId: string): Promise<PhaseResult> {
-    const [ticket, phases] = await Promise.all([
-      this.repo.getTicketById(ticketId),
-      this.repo.getTicketPhasesByTicketId(ticketId),
-    ]);
-    if (!ticket) throw new FatalPhaseError(`Ticket ${ticketId} not found`);
-
+  async draftResolution(ticket: Ticket, phases: TicketPhase[]): Promise<PhaseResult> {
     const triagePhase = phases.find(p => p.phase === 'triage' && p.status === 'success');
-    if (!triagePhase) throw new FatalPhaseError(`Triage output not available for ticket ${ticketId}`);
+    if (!triagePhase) throw new FatalPhaseError(`Triage output not available for ticket ${ticket.id}`);
 
     const triageParsed = triageOutputSchema.safeParse(triagePhase.output);
     if (!triageParsed.success) {
       throw new FatalPhaseError(`Stored triage output invalid: ${triageParsed.error.message}`);
     }
 
-    logger.info({ ticketId }, 'AI draft started');
+    logger.info({ ticketId: ticket.id }, 'AI draft started');
     const result = await this.callPortkeyTool(
       [
         {
@@ -218,25 +208,11 @@ export class AiService {
       draftOutputSchema,
       'draft',
     );
-    logger.info({ ticketId, durationMs: result.durationMs, provider: result.provider }, 'AI draft complete');
+    logger.info({ ticketId: ticket.id, durationMs: result.durationMs, provider: result.provider }, 'AI draft complete');
     return result;
   }
 
-  async runPhase(ticketId: string, phase: PhaseName): Promise<PhaseResult> {
-    return this.phaseHandlers[phase](ticketId);
+  async runPhase(ticketId: string, phase: PhaseName, ticket: Ticket, phases: TicketPhase[]): Promise<PhaseResult> {
+    return this.phaseHandlers[phase](ticket, phases);
   }
-}
-
-export type RunPhaseDeps = {
-  repo: TicketRepo;
-  portkey: PortkeyClient;
-};
-
-export function runPhase(
-  ticketId: string,
-  phase: PhaseName,
-  deps: RunPhaseDeps,
-): Promise<PhaseResult> {
-  const service = new AiService(deps.repo, deps.portkey);
-  return service.runPhase(ticketId, phase);
 }

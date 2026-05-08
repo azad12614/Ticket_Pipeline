@@ -96,8 +96,8 @@ describe('processTicketLifecycle', () => {
 
     expect(transitionTicketStatusFn).toHaveBeenCalledWith(TICKET_ID, ['queued'], 'processing');
     expect(completeTicketFn).toHaveBeenCalledWith(TICKET_ID);
-    expect(processPhaseFn).toHaveBeenNthCalledWith(1, TICKET_ID, 'triage');
-    expect(processPhaseFn).toHaveBeenNthCalledWith(2, TICKET_ID, 'draft');
+    expect(processPhaseFn).toHaveBeenNthCalledWith(1, TICKET_ID, 'triage', expect.objectContaining({ id: TICKET_ID }), expect.any(Array));
+    expect(processPhaseFn).toHaveBeenNthCalledWith(2, TICKET_ID, 'draft', expect.objectContaining({ id: TICKET_ID }), expect.any(Array));
     expect(deleteMessageFn).toHaveBeenCalledWith(RECEIPT);
   });
 
@@ -154,7 +154,7 @@ describe('processTicketLifecycle', () => {
     }));
 
     expect(processPhaseFn).toHaveBeenCalledTimes(1);
-    expect(processPhaseFn).toHaveBeenCalledWith(TICKET_ID, 'draft');
+    expect(processPhaseFn).toHaveBeenCalledWith(TICKET_ID, 'draft', expect.objectContaining({ id: TICKET_ID }), expect.any(Array));
     expect(completeTicketFn).toHaveBeenCalledWith(TICKET_ID);
   });
 
