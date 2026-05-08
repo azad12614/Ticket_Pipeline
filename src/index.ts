@@ -9,7 +9,11 @@ import logger from './lib/logger.ts';
 import { startTicketWorker } from './workers/ticketWorker.ts';
 import { postgresTicketRepo } from './repositories/ticketRepo.ts';
 import { enqueueTicket, sqsClient, QUEUE_URL } from './queues/ticketQueue.ts';
-import { GetQueueAttributesCommand } from '@aws-sdk/client-sqs';
+import {
+  GetQueueAttributesCommand,
+  ReceiveMessageCommand,
+  DeleteMessageCommand,
+} from '@aws-sdk/client-sqs';
 import { pool } from './lib/db.ts';
 import { startDlqConsumer } from './consumers/dlqConsumer.ts';
 
@@ -52,9 +56,28 @@ const notify = startNotifyService(io, {
 
 const worker = startTicketWorker();
 const dlqConsumer = startDlqConsumer({
+  receiveMessagesFn: async () => {
+    const resp = await sqsClient.send(
+      new ReceiveMessageCommand({
+        QueueUrl: config.sqs.dlqUrl,
+        MaxNumberOfMessages: 10,
+        WaitTimeSeconds: 20,
+        VisibilityTimeout: 30,
+      }),
+    );
+    return (resp.Messages ?? [])
+      .filter(m => m.Body && m.ReceiptHandle)
+      .map(m => ({ body: m.Body!, receiptHandle: m.ReceiptHandle! }));
+  },
+  deleteMessageFn: async receiptHandle => {
+    await sqsClient.send(
+      new DeleteMessageCommand({ QueueUrl: config.sqs.dlqUrl, ReceiptHandle: receiptHandle }),
+    );
+  },
   insertEventFn: postgresTicketRepo.insertEvent.bind(postgresTicketRepo),
   failTicketFn: postgresTicketRepo.failTicket.bind(postgresTicketRepo),
   enqueueTicketFn: enqueueTicket,
+  autoReplay: config.dlqAutoReplay,
 });
 
 async function sleep(ms: number): Promise<void> {
