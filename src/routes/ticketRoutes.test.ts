@@ -40,6 +40,17 @@ function makeInMemoryService(): AppDeps {
         throw { code: 404, error: 'NOT_FOUND', message: `Ticket ${id} not found` };
       return ticket;
     },
+
+    retry: {
+      getTicketByIdFn: async () => null,
+      getLatestEventByTicketIdFn: async () => null,
+      getTicketWithPhasesByIdFn: async () => null,
+      resetFailedPhasesFn: async () => undefined,
+      updateTicketStatusFn: async () => { throw new Error('not implemented'); },
+      transitionTicketStatusFn: async () => null,
+      insertEventFn: async () => undefined,
+      enqueueTicketFn: async () => undefined,
+    },
   };
 }
 

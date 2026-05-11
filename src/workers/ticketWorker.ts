@@ -5,9 +5,9 @@ import {
   deleteTicketMessage,
   changeMessageVisibility,
 } from '../queues/ticketQueue.ts';
-import { runPhase } from '../services/aiService.ts';
+import { runPhase, createPortkeyClient } from '../services/aiService.ts';
 import type { PhaseResult } from '../services/aiService.ts';
-import { postgresTicketRepo, type ITicketRepo } from '../repositories/ticketRepo.ts';
+import { postgresTicketRepo, type TicketRepo } from '../repositories/ticketRepo.ts';
 import type { Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketPhase } from '../schemas/phaseSchema.ts';
 
@@ -15,16 +15,16 @@ type TicketStatus = Ticket['status'];
 type PhaseName = TicketPhase['phase'];
 
 export type WorkerDeps = {
-  getTicketByIdFn: ITicketRepo['getTicketById'];
-  getTicketPhasesByTicketIdFn: ITicketRepo['getTicketPhasesByTicketId'];
-  transitionTicketStatusFn: ITicketRepo['transitionTicketStatus'];
-  updateTicketStatusFn: ITicketRepo['updateTicketStatus'];
-  claimPhaseForProcessingFn: ITicketRepo['claimPhaseForProcessing'];
-  completePhaseSuccessFn: ITicketRepo['completePhaseSuccess'];
-  failPhaseAttemptFn: ITicketRepo['failPhaseAttempt'];
-  completeTicketFn: ITicketRepo['completeTicket'];
-  failTicketFn: ITicketRepo['failTicket'];
-  insertEventFn: ITicketRepo['insertEvent'];
+  getTicketByIdFn: TicketRepo['getTicketById'];
+  getTicketPhasesByTicketIdFn: TicketRepo['getTicketPhasesByTicketId'];
+  transitionTicketStatusFn: TicketRepo['transitionTicketStatus'];
+  updateTicketStatusFn: TicketRepo['updateTicketStatus'];
+  claimPhaseForProcessingFn: TicketRepo['claimPhaseForProcessing'];
+  completePhaseSuccessFn: TicketRepo['completePhaseSuccess'];
+  failPhaseAttemptFn: TicketRepo['failPhaseAttempt'];
+  completeTicketFn: TicketRepo['completeTicket'];
+  failTicketFn: TicketRepo['failTicket'];
+  insertEventFn: TicketRepo['insertEvent'];
   changeMessageVisibilityFn: (receiptHandle: string, delaySeconds: number) => Promise<void>;
   deleteMessageFn: (receiptHandle: string) => Promise<void>;
   processPhaseFn: (ticketId: string, phase: PhaseName) => Promise<PhaseResult>;
@@ -82,22 +82,13 @@ async function handlePhaseError(
     return;
   }
 
-  if (failedPhase.attempts >= 3) {
-    await deps.failTicketFn(ticketId);
-    await deps.insertEventFn(ticketId, 'dlq_routed', phase, {
-      attempt: failedPhase.attempts,
-      reason: 'max_attempts',
-    });
-    await deps.deleteMessageFn(receiptHandle);
-  } else {
-    const backoff = backoffSeconds(failedPhase.attempts);
-    await deps.transitionTicketStatusFn(ticketId, ['processing'], 'queued');
-    await deps.insertEventFn(ticketId, 'retry_scheduled', phase, {
-      attempt: failedPhase.attempts,
-      backoff_seconds: backoff,
-    });
-    await deps.changeMessageVisibilityFn(receiptHandle, backoff);
-  }
+  const backoff = backoffSeconds(failedPhase.attempts);
+  await deps.transitionTicketStatusFn(ticketId, ['processing'], 'queued');
+  await deps.insertEventFn(ticketId, 'retry_scheduled', phase, {
+    attempt: failedPhase.attempts,
+    backoff_seconds: backoff,
+  });
+  await deps.changeMessageVisibilityFn(receiptHandle, backoff);
 }
 
 const MAX_PHASES = 10;
@@ -202,7 +193,8 @@ export function startTicketWorker(): WorkerHandle {
     insertEventFn: postgresTicketRepo.insertEvent.bind(postgresTicketRepo),
     changeMessageVisibilityFn: changeMessageVisibility,
     deleteMessageFn: deleteTicketMessage,
-    processPhaseFn: runPhase,
+    processPhaseFn: (ticketId, phase) =>
+      runPhase(ticketId, phase, { repo: postgresTicketRepo, portkey: createPortkeyClient() }),
   };
 
   const controller = new AbortController();

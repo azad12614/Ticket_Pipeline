@@ -38,6 +38,7 @@ describe('submitTicket', () => {
     const ticket = await submitTicket(input, {
       createTicketFn: vi.fn().mockResolvedValue(makeTicket({ status: 'queued' })),
       enqueueTicketFn: vi.fn(),
+      insertEventFn: vi.fn(),
     });
 
     expect(ticket.status).toBe('queued');
@@ -58,7 +59,7 @@ describe('submitTicket', () => {
       callOrder.push(`enqueue:${ticketId}`);
     });
 
-    const ticket = await submitTicket(input, { createTicketFn, enqueueTicketFn });
+    const ticket = await submitTicket(input, { createTicketFn, enqueueTicketFn, insertEventFn: vi.fn() });
 
     expect(ticket.id).toBe(TICKET_ID);
     expect(callOrder).toEqual(['create', `enqueue:${TICKET_ID}`]);

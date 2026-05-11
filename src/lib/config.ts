@@ -7,7 +7,8 @@ const schema = z
     logLevel: z.string().default('info'),
     databaseUrl: z.string().optional(),
     sqs: z.object({
-      queueUrl: z.string().min(1),
+      queueUrl: z.string().optional(),
+      dlqUrl: z.string().optional(),
       endpoint: z.string().optional(),
       region: z.string().default('us-east-1'),
       accessKeyId: z.string().default(''),
@@ -18,27 +19,25 @@ const schema = z
       config: z.string().optional(),
     }),
     corsOrigin: z.string().default('*'),
+    dlqAutoReplay: z.boolean().default(false),
   })
   .superRefine((data, ctx) => {
     if (data.nodeEnv !== 'test') {
       if (!data.databaseUrl)
-        ctx.addIssue({
-          code: 'custom',
-          message: 'DATABASE_URL is required',
-          path: ['databaseUrl'],
-        });
+        ctx.addIssue({ code: 'custom', message: 'DATABASE_URL is required', path: ['databaseUrl'] });
       if (!data.portkey.apiKey)
-        ctx.addIssue({
-          code: 'custom',
-          message: 'PORTKEY_API_KEY is required',
-          path: ['portkey', 'apiKey'],
-        });
+        ctx.addIssue({ code: 'custom', message: 'PORTKEY_API_KEY is required', path: ['portkey', 'apiKey'] });
+      if (!data.sqs.queueUrl)
+        ctx.addIssue({ code: 'custom', message: 'SQS_QUEUE_URL is required', path: ['sqs', 'queueUrl'] });
+      if (!data.sqs.dlqUrl)
+        ctx.addIssue({ code: 'custom', message: 'SQS_DLQ_URL is required', path: ['sqs', 'dlqUrl'] });
     }
   })
   .transform(data => ({
     ...data,
     databaseUrl: data.databaseUrl ?? '',
     portkey: { ...data.portkey, apiKey: data.portkey.apiKey ?? '' },
+    sqs: { ...data.sqs, queueUrl: data.sqs.queueUrl ?? '', dlqUrl: data.sqs.dlqUrl ?? '' },
   }));
 
 export const config = schema.parse({
@@ -48,6 +47,7 @@ export const config = schema.parse({
   databaseUrl: process.env['DATABASE_URL'],
   sqs: {
     queueUrl: process.env['SQS_QUEUE_URL'],
+    dlqUrl: process.env['SQS_DLQ_URL'],
     endpoint: process.env['SQS_ENDPOINT'],
     region: process.env['AWS_REGION'],
     accessKeyId: process.env['AWS_ACCESS_KEY_ID'],
@@ -58,4 +58,5 @@ export const config = schema.parse({
     config: process.env['PORTKEY_CONFIG'],
   },
   corsOrigin: process.env['CORS_ORIGIN'],
+  dlqAutoReplay: process.env['DLQ_AUTO_REPLAY'] === 'true',
 });

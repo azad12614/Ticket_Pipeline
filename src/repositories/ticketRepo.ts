@@ -20,7 +20,7 @@ export type TicketWithPhases = Ticket & {
   events: TicketEvent[];
 };
 
-export type ITicketRepo = {
+export type TicketRepo = {
   getAllTickets(): Promise<Pick<Ticket, 'id' | 'status' | 'created_at'>[]>;
   createTicket(input: TicketInput): Promise<Ticket>;
   getTicketById(id: string): Promise<Ticket | null>;
@@ -57,6 +57,7 @@ export type ITicketRepo = {
   ): Promise<void>;
   getEventsByTicketId(ticketId: string): Promise<TicketEvent[]>;
   getLatestEventByTicketId(ticketId: string): Promise<TicketEvent | null>;
+  resetFailedPhases(ticketId: string): Promise<void>;
 };
 
 function parseOrThrow<T>(schema: z.ZodType<T>, data: unknown, label: string): T {
@@ -65,7 +66,7 @@ function parseOrThrow<T>(schema: z.ZodType<T>, data: unknown, label: string): T 
   return result.data;
 }
 
-export class PostgresTicketRepo implements ITicketRepo {
+export class PostgresTicketRepo implements TicketRepo {
   private readonly db: Pool;
 
   constructor(db: Pool) {
@@ -149,7 +150,7 @@ export class PostgresTicketRepo implements ITicketRepo {
 
   async getAllTickets(): Promise<Pick<Ticket, 'id' | 'status' | 'created_at'>[]> {
     const result = await this.db.query(
-      'SELECT id, status, created_at FROM tickets ORDER BY created_at DESC',
+      'SELECT id, status, created_at FROM tickets WHERE archived_at IS NULL ORDER BY created_at DESC',
     );
     const schema = ticketSchema.pick({ id: true, status: true, created_at: true });
     return result.rows.map(row => parseOrThrow(schema, row, 'getAllTickets'));
@@ -339,6 +340,15 @@ export class PostgresTicketRepo implements ITicketRepo {
       return failed;
     });
   }
+
+  async resetFailedPhases(ticketId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE ticket_phases
+       SET status = 'started', attempts = 0, output = NULL, started_at = NULL, completed_at = NULL
+       WHERE ticket_id = $1 AND status = 'failure'`,
+      [ticketId],
+    );
+  }
 }
 
-export const postgresTicketRepo: ITicketRepo = new PostgresTicketRepo(pool);
+export const postgresTicketRepo: TicketRepo = new PostgresTicketRepo(pool);
