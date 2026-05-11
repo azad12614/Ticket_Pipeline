@@ -5,7 +5,7 @@ import {
   deleteTicketMessage,
   changeMessageVisibility,
 } from '../queues/ticketQueue.ts';
-import { runPhase, createPortkeyClient } from '../services/aiService.ts';
+import { AiService, createPortkeyClient } from '../services/aiService.ts';
 import type { PhaseResult } from '../services/aiService.ts';
 import { postgresTicketRepo, type TicketRepo } from '../repositories/ticketRepo.ts';
 import type { Ticket } from '../schemas/ticketSchema.ts';
@@ -27,7 +27,7 @@ export type WorkerDeps = {
   insertEventFn: TicketRepo['insertEvent'];
   changeMessageVisibilityFn: (receiptHandle: string, delaySeconds: number) => Promise<void>;
   deleteMessageFn: (receiptHandle: string) => Promise<void>;
-  processPhaseFn: (ticketId: string, phase: PhaseName) => Promise<PhaseResult>;
+  processPhaseFn: (ticketId: string, phase: PhaseName, ticket: Ticket, phases: TicketPhase[]) => Promise<PhaseResult>;
 };
 
 function isTerminalStatus(status: TicketStatus): boolean {
@@ -95,6 +95,7 @@ const MAX_PHASES = 10;
 
 async function orchestratePhases(
   ticketId: string,
+  ticket: Ticket,
   receiptHandle: string,
   deps: WorkerDeps,
 ): Promise<void> {
@@ -118,7 +119,7 @@ async function orchestratePhases(
     logger.info({ ticketId, phase: nextPhase, attempt: phaseClaim.attempts }, 'Phase started');
 
     try {
-      const { output, durationMs, provider } = await deps.processPhaseFn(ticketId, nextPhase);
+      const { output, durationMs, provider } = await deps.processPhaseFn(ticketId, nextPhase, ticket, phases);
       await deps.completePhaseSuccessFn(ticketId, nextPhase, output, { durationMs, provider });
       logger.info({ ticketId, phase: nextPhase, durationMs, provider }, 'Phase completed');
     } catch (phaseError) {
@@ -162,7 +163,7 @@ export async function processTicketLifecycle(
   logger.info({ ticketId }, 'Ticket claimed — processing started');
 
   try {
-    await orchestratePhases(ticketId, receiptHandle, deps);
+    await orchestratePhases(ticketId, existing, receiptHandle, deps);
   } catch (error) {
     logger.error({ err: error, ticketId }, 'Ticket processing failed');
     const failed = await deps.failTicketFn(ticketId);
@@ -179,6 +180,8 @@ export type WorkerHandle = {
 };
 
 export function startTicketWorker(): WorkerHandle {
+  const aiService = new AiService(createPortkeyClient());
+
   const deps: WorkerDeps = {
     getTicketByIdFn: postgresTicketRepo.getTicketById.bind(postgresTicketRepo),
     getTicketPhasesByTicketIdFn:
@@ -193,8 +196,8 @@ export function startTicketWorker(): WorkerHandle {
     insertEventFn: postgresTicketRepo.insertEvent.bind(postgresTicketRepo),
     changeMessageVisibilityFn: changeMessageVisibility,
     deleteMessageFn: deleteTicketMessage,
-    processPhaseFn: (ticketId, phase) =>
-      runPhase(ticketId, phase, { repo: postgresTicketRepo, portkey: createPortkeyClient() }),
+    processPhaseFn: (ticketId, phase, ticket, phases) =>
+      aiService.runPhase(ticketId, phase, ticket, phases),
   };
 
   const controller = new AbortController();

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AiService, type PortkeyClient } from './aiService.ts';
 import { FatalPhaseError } from '../lib/errors.ts';
-import type { TicketRepo } from '../repositories/ticketRepo.ts';
 import type { Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketPhase } from '../schemas/phaseSchema.ts';
 
@@ -58,94 +57,59 @@ function draftResponse(args: object) {
   };
 }
 
-function makeFakeRepo(): TicketRepo {
-  return {
-    getAllTickets: vi.fn(),
-    createTicket: vi.fn(),
-    getTicketById: vi.fn(),
-    getTicketPhasesByTicketId: vi.fn(),
-    getTicketWithPhasesById: vi.fn(),
-    updateTicketStatus: vi.fn(),
-    transitionTicketStatus: vi.fn(),
-    claimPhaseForProcessing: vi.fn(),
-    completePhaseSuccess: vi.fn(),
-    failPhaseAttempt: vi.fn(),
-    completeTicket: vi.fn(),
-    failTicket: vi.fn(),
-    insertEvent: vi.fn(),
-    getEventsByTicketId: vi.fn(),
-    getLatestEventByTicketId: vi.fn(),
-    resetFailedPhases: vi.fn(),
-  };
-}
-
 function makeFakePortkey(mockCreate: ReturnType<typeof vi.fn>): PortkeyClient {
   return { chat: { completions: { create: mockCreate } } } as unknown as PortkeyClient;
 }
 
 describe('AiService.triageTicket', () => {
-  let repo: TicketRepo;
   let mockCreate: ReturnType<typeof vi.fn>;
   let service: AiService;
 
   beforeEach(() => {
-    repo = makeFakeRepo();
     mockCreate = vi.fn();
-    service = new AiService(repo, makeFakePortkey(mockCreate));
+    service = new AiService(makeFakePortkey(mockCreate));
   });
 
   it('returns TriageOutput on valid tool call response', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
     mockCreate.mockResolvedValueOnce(triageResponse(VALID_TRIAGE_ARGS));
 
-    const result = await service.triageTicket(TICKET_ID);
+    const result = await service.triageTicket(mockTicket);
 
     expect(result).toMatchObject({ output: VALID_TRIAGE_ARGS });
   });
 
-  it('throws FatalPhaseError when ticket not found', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(null);
-
-    await expect(service.triageTicket(TICKET_ID)).rejects.toBeInstanceOf(FatalPhaseError);
-  });
-
   it('throws FatalPhaseError when choices array is empty', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
     mockCreate.mockResolvedValueOnce({ choices: [] });
 
-    await expect(service.triageTicket(TICKET_ID)).rejects.toBeInstanceOf(FatalPhaseError);
+    await expect(service.triageTicket(mockTicket)).rejects.toBeInstanceOf(FatalPhaseError);
   });
 
   it('throws FatalPhaseError when response has no tool call', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
     mockCreate.mockResolvedValueOnce({ choices: [{ message: { tool_calls: [] } }] });
 
-    await expect(service.triageTicket(TICKET_ID)).rejects.toBeInstanceOf(FatalPhaseError);
+    await expect(service.triageTicket(mockTicket)).rejects.toBeInstanceOf(FatalPhaseError);
   });
 
   it('throws FatalPhaseError when arguments not valid JSON', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
     mockCreate.mockResolvedValueOnce({
       choices: [{ message: { tool_calls: [{ type: 'function', function: { name: 'triage_ticket', arguments: 'not-json' } }] } }],
     });
 
-    await expect(service.triageTicket(TICKET_ID)).rejects.toBeInstanceOf(FatalPhaseError);
+    await expect(service.triageTicket(mockTicket)).rejects.toBeInstanceOf(FatalPhaseError);
   });
 
   it('throws FatalPhaseError when Zod validation fails', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
     mockCreate.mockResolvedValueOnce(triageResponse({ ...VALID_TRIAGE_ARGS, category: 'invalid-category' }));
 
-    await expect(service.triageTicket(TICKET_ID)).rejects.toBeInstanceOf(FatalPhaseError);
+    await expect(service.triageTicket(mockTicket)).rejects.toBeInstanceOf(FatalPhaseError);
   });
 
   it('propagates network error as plain Error (retryable)', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
     mockCreate.mockRejectedValueOnce(new Error('Network timeout'));
 
     let caught: unknown;
     try {
-      await service.triageTicket(TICKET_ID);
+      await service.triageTicket(mockTicket);
     } catch (e) {
       caught = e;
     }
@@ -155,67 +119,48 @@ describe('AiService.triageTicket', () => {
 });
 
 describe('AiService.draftResolution', () => {
-  let repo: TicketRepo;
   let mockCreate: ReturnType<typeof vi.fn>;
   let service: AiService;
 
   beforeEach(() => {
-    repo = makeFakeRepo();
     mockCreate = vi.fn();
-    service = new AiService(repo, makeFakePortkey(mockCreate));
+    service = new AiService(makeFakePortkey(mockCreate));
   });
 
   it('returns DraftOutput using stored triage context', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
-    vi.mocked(repo.getTicketPhasesByTicketId).mockResolvedValueOnce([makeTriagePhase()]);
     mockCreate.mockResolvedValueOnce(draftResponse(VALID_DRAFT_ARGS));
 
-    const result = await service.draftResolution(TICKET_ID);
+    const result = await service.draftResolution(mockTicket, [makeTriagePhase()]);
 
     expect(result).toMatchObject({ output: VALID_DRAFT_ARGS });
   });
 
-  it('throws FatalPhaseError when ticket not found', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(null);
-    vi.mocked(repo.getTicketPhasesByTicketId).mockResolvedValueOnce([makeTriagePhase()]);
-
-    await expect(service.draftResolution(TICKET_ID)).rejects.toBeInstanceOf(FatalPhaseError);
-  });
-
   it('throws FatalPhaseError when triage phase not in success status', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
-    vi.mocked(repo.getTicketPhasesByTicketId).mockResolvedValueOnce([
-      makeTriagePhase({ status: 'failure' }),
-    ]);
-
-    await expect(service.draftResolution(TICKET_ID)).rejects.toBeInstanceOf(FatalPhaseError);
+    await expect(
+      service.draftResolution(mockTicket, [makeTriagePhase({ status: 'failure' })]),
+    ).rejects.toBeInstanceOf(FatalPhaseError);
   });
 
   it('throws FatalPhaseError when stored triage output is invalid', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
-    vi.mocked(repo.getTicketPhasesByTicketId).mockResolvedValueOnce([
-      makeTriagePhase({ output: { bad: 'data' } }),
-    ]);
-
-    await expect(service.draftResolution(TICKET_ID)).rejects.toBeInstanceOf(FatalPhaseError);
+    await expect(
+      service.draftResolution(mockTicket, [makeTriagePhase({ output: { bad: 'data' } })]),
+    ).rejects.toBeInstanceOf(FatalPhaseError);
   });
 
   it('throws FatalPhaseError when draft Zod validation fails', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
-    vi.mocked(repo.getTicketPhasesByTicketId).mockResolvedValueOnce([makeTriagePhase()]);
     mockCreate.mockResolvedValueOnce(draftResponse({ ...VALID_DRAFT_ARGS, customer_reply: 'too short' }));
 
-    await expect(service.draftResolution(TICKET_ID)).rejects.toBeInstanceOf(FatalPhaseError);
+    await expect(
+      service.draftResolution(mockTicket, [makeTriagePhase()]),
+    ).rejects.toBeInstanceOf(FatalPhaseError);
   });
 
   it('propagates network error as plain Error (retryable)', async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
-    vi.mocked(repo.getTicketPhasesByTicketId).mockResolvedValueOnce([makeTriagePhase()]);
     mockCreate.mockRejectedValueOnce(new Error('Network timeout'));
 
     let caught: unknown;
     try {
-      await service.draftResolution(TICKET_ID);
+      await service.draftResolution(mockTicket, [makeTriagePhase()]);
     } catch (e) {
       caught = e;
     }
@@ -225,36 +170,31 @@ describe('AiService.draftResolution', () => {
 });
 
 describe('AiService.runPhase', () => {
-  let repo: TicketRepo;
   let mockCreate: ReturnType<typeof vi.fn>;
   let service: AiService;
 
   beforeEach(() => {
-    repo = makeFakeRepo();
     mockCreate = vi.fn();
-    service = new AiService(repo, makeFakePortkey(mockCreate));
+    service = new AiService(makeFakePortkey(mockCreate));
   });
 
   it("routes 'triage' through triageTicket", async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
     mockCreate.mockResolvedValueOnce(triageResponse(VALID_TRIAGE_ARGS));
 
-    const result = await service.runPhase(TICKET_ID, 'triage');
+    const result = await service.runPhase(TICKET_ID, 'triage', mockTicket, []);
 
     expect(result).toMatchObject({ output: VALID_TRIAGE_ARGS });
   });
 
   it("routes 'draft' through draftResolution", async () => {
-    vi.mocked(repo.getTicketById).mockResolvedValueOnce(mockTicket);
-    vi.mocked(repo.getTicketPhasesByTicketId).mockResolvedValueOnce([makeTriagePhase()]);
     mockCreate.mockResolvedValueOnce(draftResponse(VALID_DRAFT_ARGS));
 
-    const result = await service.runPhase(TICKET_ID, 'draft');
+    const result = await service.runPhase(TICKET_ID, 'draft', mockTicket, [makeTriagePhase()]);
 
     expect(result).toMatchObject({ output: VALID_DRAFT_ARGS });
   });
 
   it('throws for unknown phase', async () => {
-    await expect(service.runPhase(TICKET_ID, 'unknown' as 'triage')).rejects.toThrow();
+    await expect(service.runPhase(TICKET_ID, 'unknown' as 'triage', mockTicket, [])).rejects.toThrow();
   });
 });
