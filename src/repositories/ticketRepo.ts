@@ -58,6 +58,7 @@ export type TicketRepo = {
   getEventsByTicketId(ticketId: string): Promise<TicketEvent[]>;
   getLatestEventByTicketId(ticketId: string): Promise<TicketEvent | null>;
   resetFailedPhases(ticketId: string): Promise<void>;
+  resetStuckPhases(staleThresholdMinutes?: number): Promise<number>;
 };
 
 function parseOrThrow<T>(schema: z.ZodType<T>, data: unknown, label: string): T {
@@ -348,6 +349,28 @@ export class PostgresTicketRepo implements TicketRepo {
        WHERE ticket_id = $1 AND status = 'failure'`,
       [ticketId],
     );
+  }
+
+  async resetStuckPhases(staleThresholdMinutes = 5): Promise<number> {
+    return this.withTransaction(async client => {
+      const phases = await client.query(
+        `UPDATE ticket_phases
+         SET status = 'started', started_at = NULL, completed_at = NULL
+         WHERE status = 'progress'
+           AND started_at < NOW() - ($1 * INTERVAL '1 minute')
+         RETURNING ticket_id`,
+        [staleThresholdMinutes],
+      );
+      if (phases.rowCount && phases.rowCount > 0) {
+        const ticketIds = phases.rows.map((r: { ticket_id: string }) => r.ticket_id);
+        await client.query(
+          `UPDATE tickets SET status = 'queued'
+           WHERE id = ANY($1::uuid[]) AND status = 'processing'`,
+          [ticketIds],
+        );
+      }
+      return phases.rowCount ?? 0;
+    });
   }
 }
 

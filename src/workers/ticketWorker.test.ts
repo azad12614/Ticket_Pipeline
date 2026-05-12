@@ -53,6 +53,7 @@ function makeWorkerDeps(overrides: Partial<WorkerDeps> = {}): WorkerDeps {
     changeMessageVisibilityFn: vi.fn().mockResolvedValue(undefined),
     deleteMessageFn: vi.fn().mockResolvedValue(undefined),
     processPhaseFn: vi.fn().mockResolvedValue(makePhaseResult()),
+    resetStuckPhasesFn: vi.fn().mockResolvedValue(0),
     ...overrides,
   };
 }

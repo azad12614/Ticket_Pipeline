@@ -28,6 +28,7 @@ export type WorkerDeps = {
   changeMessageVisibilityFn: (receiptHandle: string, delaySeconds: number) => Promise<void>;
   deleteMessageFn: (receiptHandle: string) => Promise<void>;
   processPhaseFn: (ticketId: string, phase: PhaseName, ticket: Ticket, phases: TicketPhase[]) => Promise<PhaseResult>;
+  resetStuckPhasesFn: TicketRepo['resetStuckPhases'];
 };
 
 function isTerminalStatus(status: TicketStatus): boolean {
@@ -198,11 +199,17 @@ export function startTicketWorker(): WorkerHandle {
     deleteMessageFn: deleteTicketMessage,
     processPhaseFn: (ticketId, phase, ticket, phases) =>
       aiService.runPhase(ticketId, phase, ticket, phases),
+    resetStuckPhasesFn: postgresTicketRepo.resetStuckPhases.bind(postgresTicketRepo),
   };
 
   const controller = new AbortController();
 
   const done = (async () => {
+    const stuckCount = await deps.resetStuckPhasesFn();
+    if (stuckCount > 0) {
+      logger.warn({ count: stuckCount }, 'Worker startup: reset stuck phases from previous run');
+    }
+
     let errorCount = 0;
     while (!controller.signal.aborted) {
       try {
