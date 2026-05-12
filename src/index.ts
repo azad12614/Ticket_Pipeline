@@ -77,6 +77,7 @@ const dlqConsumer = startDlqConsumer({
   insertEventFn: postgresTicketRepo.insertEvent.bind(postgresTicketRepo),
   failTicketFn: postgresTicketRepo.failTicket.bind(postgresTicketRepo),
   enqueueTicketFn: enqueueTicket,
+  getEventsByTicketIdFn: postgresTicketRepo.getEventsByTicketId.bind(postgresTicketRepo),
   autoReplay: config.dlqAutoReplay,
 });
 
