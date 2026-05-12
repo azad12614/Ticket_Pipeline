@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { PHASE_NAMES } from './phaseSchema.ts';
 
 export const ticketEventSchema = z.object({
   id: z.uuidv7(),
   ticket_id: z.uuidv7(),
-  phase: z.enum(['triage', 'draft']).nullable(),
+  phase: z.enum(PHASE_NAMES).nullable(),
   event_type: z.enum([
     'ticket_created',
     'phase_started', 'phase_completed', 'phase_failed',

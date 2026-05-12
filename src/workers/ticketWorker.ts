@@ -8,6 +8,7 @@ import {
 import { AiService, createPortkeyClient } from '../services/aiService.ts';
 import type { PhaseResult } from '../services/aiService.ts';
 import { postgresTicketRepo, type TicketRepo } from '../repositories/ticketRepo.ts';
+import { PHASE_NAMES } from '../schemas/phaseSchema.ts';
 import type { Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketPhase } from '../schemas/phaseSchema.ts';
 
@@ -36,15 +37,18 @@ function isTerminalStatus(status: TicketStatus): boolean {
 }
 
 function findNextPhase(phases: TicketPhase[], ticketId: string): PhaseName | null {
-  const triage = phases.find(phase => phase.phase === 'triage');
-  const draft = phases.find(phase => phase.phase === 'draft');
+  const phaseMap = new Map(phases.map(p => [p.phase, p]));
 
-  if (!triage || !draft) {
-    throw new Error(`Missing phase rows for ticket ${ticketId} — expected triage and draft`);
+  for (const name of PHASE_NAMES) {
+    if (!phaseMap.has(name)) {
+      throw new Error(`Missing phase row '${name}' for ticket ${ticketId}`);
+    }
   }
 
-  if (triage.status !== 'success') return 'triage';
-  if (draft.status !== 'success') return 'draft';
+  for (const name of PHASE_NAMES) {
+    if (phaseMap.get(name)!.status !== 'success') return name;
+  }
+
   return null;
 }
 

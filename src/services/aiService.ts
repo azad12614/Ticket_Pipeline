@@ -23,7 +23,7 @@ function resolveProvider(response: PortkeyResponse): string {
   return response.model ?? response.getHeaders?.()?.['x-portkey-provider'] ?? 'unknown';
 }
 
-type PhaseName = 'triage' | 'draft';
+type PhaseName = TicketPhase['phase'];
 
 export type PhaseResult = { output: unknown; durationMs: number; provider: string };
 

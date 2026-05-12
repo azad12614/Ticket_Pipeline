@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 import { v7 as uuidv7 } from 'uuid';
 import { pool } from '../lib/db.ts';
 import { ticketSchema } from '../schemas/ticketSchema.ts';
-import { ticketPhaseSchema } from '../schemas/phaseSchema.ts';
+import { PHASE_NAMES, ticketPhaseSchema } from '../schemas/phaseSchema.ts';
 import { ticketEventSchema } from '../schemas/eventSchema.ts';
 import type { TicketInput, Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketPhase } from '../schemas/phaseSchema.ts';
@@ -233,13 +233,13 @@ export class PostgresTicketRepo implements TicketRepo {
         'INSERT INTO tickets (id, subject, body) VALUES ($1, $2, $3) RETURNING *',
         [id, input.subject, input.body],
       );
-      await client.query(
-        `INSERT INTO ticket_phases (id, ticket_id, phase, status, attempts, output)
-         VALUES
-           ($1, $3, 'triage', 'started', 0, NULL),
-           ($2, $3, 'draft', 'started', 0, NULL)`,
-        [uuidv7(), uuidv7(), id],
-      );
+      for (const phase of PHASE_NAMES) {
+        await client.query(
+          `INSERT INTO ticket_phases (id, ticket_id, phase, status, attempts, output)
+           VALUES ($1, $2, $3, 'started', 0, NULL)`,
+          [uuidv7(), id, phase],
+        );
+      }
       await this.insertEventWith(client, id, 'ticket_created', null, null);
       return parseOrThrow(ticketSchema, ticketInsert.rows[0], 'createTicket');
     });
