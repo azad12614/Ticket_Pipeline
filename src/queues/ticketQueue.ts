@@ -23,12 +23,12 @@ export const sqsClient = new SQSClient({
   },
 });
 
-export async function enqueueTicket(ticketId: string): Promise<void> {
+export async function enqueueTicket(ticketId: string, delaySeconds?: number): Promise<void> {
   await sqsClient.send(
     new SendMessageCommand({
       QueueUrl: QUEUE_URL,
       MessageBody: JSON.stringify({ ticketId }),
-      // DelaySeconds: 30,
+      ...(delaySeconds != null ? { DelaySeconds: delaySeconds } : {}),
     }),
   );
 }

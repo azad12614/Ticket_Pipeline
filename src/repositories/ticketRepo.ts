@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 import { v7 as uuidv7 } from 'uuid';
 import { pool } from '../lib/db.ts';
 import { ticketSchema } from '../schemas/ticketSchema.ts';
-import { ticketPhaseSchema } from '../schemas/phaseSchema.ts';
+import { PHASE_NAMES, ticketPhaseSchema } from '../schemas/phaseSchema.ts';
 import { ticketEventSchema } from '../schemas/eventSchema.ts';
 import type { TicketInput, Ticket } from '../schemas/ticketSchema.ts';
 import type { TicketPhase } from '../schemas/phaseSchema.ts';
@@ -58,6 +58,7 @@ export type TicketRepo = {
   getEventsByTicketId(ticketId: string): Promise<TicketEvent[]>;
   getLatestEventByTicketId(ticketId: string): Promise<TicketEvent | null>;
   resetFailedPhases(ticketId: string): Promise<void>;
+  resetStuckPhases(staleThresholdMinutes?: number): Promise<number>;
 };
 
 function parseOrThrow<T>(schema: z.ZodType<T>, data: unknown, label: string): T {
@@ -232,13 +233,13 @@ export class PostgresTicketRepo implements TicketRepo {
         'INSERT INTO tickets (id, subject, body) VALUES ($1, $2, $3) RETURNING *',
         [id, input.subject, input.body],
       );
-      await client.query(
-        `INSERT INTO ticket_phases (id, ticket_id, phase, status, attempts, output)
-         VALUES
-           ($1, $3, 'triage', 'started', 0, NULL),
-           ($2, $3, 'draft', 'started', 0, NULL)`,
-        [uuidv7(), uuidv7(), id],
-      );
+      for (const phase of PHASE_NAMES) {
+        await client.query(
+          `INSERT INTO ticket_phases (id, ticket_id, phase, status, attempts, output)
+           VALUES ($1, $2, $3, 'started', 0, NULL)`,
+          [uuidv7(), id, phase],
+        );
+      }
       await this.insertEventWith(client, id, 'ticket_created', null, null);
       return parseOrThrow(ticketSchema, ticketInsert.rows[0], 'createTicket');
     });
@@ -348,6 +349,28 @@ export class PostgresTicketRepo implements TicketRepo {
        WHERE ticket_id = $1 AND status = 'failure'`,
       [ticketId],
     );
+  }
+
+  async resetStuckPhases(staleThresholdMinutes = 5): Promise<number> {
+    return this.withTransaction(async client => {
+      const phases = await client.query(
+        `UPDATE ticket_phases
+         SET status = 'started', started_at = NULL, completed_at = NULL
+         WHERE status = 'progress'
+           AND started_at < NOW() - ($1 * INTERVAL '1 minute')
+         RETURNING ticket_id`,
+        [staleThresholdMinutes],
+      );
+      if (phases.rowCount && phases.rowCount > 0) {
+        const ticketIds = phases.rows.map((r: { ticket_id: string }) => r.ticket_id);
+        await client.query(
+          `UPDATE tickets SET status = 'queued'
+           WHERE id = ANY($1::uuid[]) AND status = 'processing'`,
+          [ticketIds],
+        );
+      }
+      return phases.rowCount ?? 0;
+    });
   }
 }
 

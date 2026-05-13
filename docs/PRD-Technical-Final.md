@@ -132,7 +132,11 @@ Worker long-polls the main queue (20s wait, one message at a time). On pickup: r
 
 DLQ consumer is a **separate process**. It reads from the DLQ, sets `ticket.status = 'failed'`, writes a `dlq_routed` event to `ticket_events`, and emits `ticket.failed` via Socket.io.
 
-LocalStack provisioned via `uv` + `venv`. Main queue linked to DLQ via `RedrivePolicy` with `maxReceiveCount: 3`. See README for setup commands.
+**autoReplay guardrails (when `DLQ_AUTO_REPLAY=true`):** Before re-enqueueing, the DLQ consumer checks three conditions and skips replay if any fails: (1) `dlq_routed` event count for the ticket has reached `maxReplayCount` (default 3) — prevents infinite replay loops; (2) any prior `dlq_routed` event has `reason=fatal_error` — content errors won't self-resolve; (3) replay always uses `DelaySeconds` (default 30s) to prevent immediate re-hammering.
+
+**Crash recovery:** On startup, the worker calls `resetStuckPhases` once before the poll loop. This resets any `ticket_phases` rows left in `status='progress'` (from a previous worker crash) back to `started`, and transitions the corresponding tickets from `processing` back to `queued`. Threshold: phases stuck for more than 5 minutes are considered stale.
+
+LocalStack provisioned via `uv` + `venv`. Main queue linked to DLQ via `RedrivePolicy` with `maxReceiveCount: 10`. See README for setup commands.
 
 
 ---
@@ -335,6 +339,8 @@ Four hard rules applied across all `.ts` files:
 - **`as const` instead of enums** — TypeScript enums emit runtime JS and have surprising semantics. `as const` objects are plain values with inferred literal types.
 - **Type aliases, not interfaces** — Use `type Foo = { ... }`. Interfaces allow declaration merging; aliases don't — prevents accidental augmentation.
 - **`unknown` not `any`** — `any` disables the type checker. `unknown` forces a narrowing step before use.
+
+**Single source of truth for phase names:** `PHASE_NAMES` in `src/schemas/phaseSchema.ts` is the only place phase names are defined. `eventSchema`, `ticketRepo` (INSERT loop), and `ticketWorker` (orchestration order) all derive from it. Adding a new phase requires one change — TypeScript will catch any callsite that needs updating (e.g., `AiService.phaseHandlers` is typed as `Record<PhaseName, ...>` and will fail to compile if a handler is missing).
 
 ---
 
